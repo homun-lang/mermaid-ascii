@@ -258,6 +258,176 @@ impl Layout {
     }
 }
 
+// ─── Dummy Node Insertion ──────────────────────────────────────────────────────
+
+/// The result of dummy node insertion for a single long edge.
+///
+/// When an edge spans more than one layer (i.e., `layer[tgt] - layer[src] > 1`),
+/// it is replaced by a chain of dummy nodes — one per intermediate layer.
+/// Each dummy node gets a synthetic id and is marked with `is_dummy = true`
+/// in the augmented graph.
+pub struct DummyEdge {
+    /// Id of the original source node.
+    pub original_src: String,
+    /// Id of the original target node.
+    pub original_tgt: String,
+    /// Ids of the dummy nodes inserted along the path, in order from src to tgt.
+    pub dummy_ids: Vec<String>,
+    /// Original edge data (edge type, label, attrs) preserved for rendering.
+    pub edge_data: EdgeData,
+}
+
+/// A graph augmented with dummy nodes for edges that span multiple layers.
+///
+/// After dummy node insertion, every edge in the augmented graph connects
+/// nodes in adjacent layers (layer difference == 1). This is a pre-condition
+/// for the crossing-minimisation and coordinate-assignment phases.
+pub struct AugmentedGraph {
+    /// The augmented DiGraph. Contains original nodes plus dummy nodes.
+    /// Dummy nodes have ids starting with `"__dummy_"`.
+    pub graph: DiGraph<NodeData, EdgeData>,
+    /// Layer assignment for every node (original + dummy).
+    pub layers: HashMap<String, usize>,
+    /// Total number of layers.
+    pub layer_count: usize,
+    /// Information about each long edge that was broken up.
+    pub dummy_edges: Vec<DummyEdge>,
+}
+
+/// Prefix used for dummy node ids. The rendering phase can detect dummy nodes
+/// by checking `id.starts_with(DUMMY_PREFIX)`.
+pub const DUMMY_PREFIX: &str = "__dummy_";
+
+/// Insert dummy nodes into the cycle-free, layer-assigned graph.
+///
+/// For each edge (u → v) where `layer[v] - layer[u] > 1`, the edge is removed
+/// and replaced by the chain:
+///   u → d₁ → d₂ → … → dₖ → v
+/// where each dᵢ lives in layer `layer[u] + i`.
+///
+/// # Arguments
+/// * `dag`   — The cycle-free DiGraph produced by `remove_cycles`.
+/// * `la`    — The layer assignment produced by `LayerAssignment::assign`.
+///
+/// # Returns
+/// An `AugmentedGraph` where every edge connects adjacent-layer nodes.
+pub fn insert_dummy_nodes(dag: &DiGraph<NodeData, EdgeData>, la: &LayerAssignment) -> AugmentedGraph {
+    use crate::ast::NodeShape;
+
+    // Clone the DAG — we will mutate it by removing long edges and adding dummies.
+    let mut g: DiGraph<NodeData, EdgeData> = DiGraph::new();
+
+    // Rebuild the graph from scratch so we control NodeIndex ordering.
+    // Map original NodeIndex → new NodeIndex.
+    let mut old_to_new: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+
+    // Add all original nodes.
+    let mut sorted_nodes: Vec<NodeIndex> = dag.node_indices().collect();
+    sorted_nodes.sort();
+    for &ni in &sorted_nodes {
+        let new_ni = g.add_node(dag[ni].clone());
+        old_to_new.insert(ni, new_ni);
+    }
+
+    // Layer map: node_id → layer (starts with original nodes, extended with dummies).
+    let mut layers: HashMap<String, usize> = la.layers.clone();
+
+    let mut dummy_edges: Vec<DummyEdge> = Vec::new();
+    // Counter to generate unique dummy ids per long edge.
+    let mut edge_counter: usize = 0;
+
+    // Collect all edges upfront so we can iterate without borrowing `g` mutably.
+    let all_edges: Vec<(NodeIndex, NodeIndex, EdgeData)> = dag
+        .edge_references()
+        .map(|e| (e.source(), e.target(), e.weight().clone()))
+        .collect();
+
+    for (src_old, tgt_old, edge_data) in all_edges {
+        let src_new = old_to_new[&src_old];
+        let tgt_new = old_to_new[&tgt_old];
+
+        let src_id = g[src_new].id.clone();
+        let tgt_id = g[tgt_new].id.clone();
+
+        let src_layer = layers[&src_id];
+        let tgt_layer = layers[&tgt_id];
+
+        // Edges within the same layer or adjacent layers need no dummies.
+        // (Same-layer edges are unusual but can arise from bidirectional edges
+        //  after cycle removal; we keep them as-is.)
+        let layer_diff = if tgt_layer > src_layer {
+            tgt_layer - src_layer
+        } else {
+            // Edge goes "upward" (reversed back-edge in display); treat as span 1.
+            1
+        };
+
+        if layer_diff <= 1 {
+            // Adjacent-layer edge — copy as-is.
+            g.add_edge(src_new, tgt_new, edge_data);
+            continue;
+        }
+
+        // Long edge: replace with a chain of dummy nodes.
+        // Each dummy id is "__dummy_{edge_counter}_{i}" for uniqueness.
+        let steps = layer_diff - 1; // number of intermediate layers
+        let this_edge = edge_counter;
+        edge_counter += 1;
+
+        let mut dummy_ids: Vec<String> = Vec::with_capacity(steps);
+        let mut chain_prev = src_new;
+
+        for i in 0..steps {
+            let dummy_layer = src_layer + i + 1;
+            let dummy_id = format!("{}{}_{}", DUMMY_PREFIX, this_edge, i);
+
+            let dummy_data = NodeData {
+                id: dummy_id.clone(),
+                label: String::new(),
+                shape: NodeShape::Rectangle,
+                attrs: Vec::new(),
+                subgraph: None,
+            };
+            let dummy_ni = g.add_node(dummy_data);
+            layers.insert(dummy_id.clone(), dummy_layer);
+            dummy_ids.push(dummy_id);
+
+            // Edge from previous node to this dummy.
+            let segment_edge = EdgeData {
+                edge_type: edge_data.edge_type.clone(),
+                label: None, // label only on the last segment (see below)
+                attrs: Vec::new(),
+            };
+            g.add_edge(chain_prev, dummy_ni, segment_edge);
+            chain_prev = dummy_ni;
+        }
+
+        // Final segment: dummy → original target, carry the label.
+        let last_segment = EdgeData {
+            edge_type: edge_data.edge_type.clone(),
+            label: edge_data.label.clone(),
+            attrs: edge_data.attrs.clone(),
+        };
+        g.add_edge(chain_prev, tgt_new, last_segment);
+
+        dummy_edges.push(DummyEdge {
+            original_src: src_id,
+            original_tgt: tgt_id,
+            dummy_ids,
+            edge_data,
+        });
+    }
+
+    let layer_count = layers.values().copied().max().unwrap_or(0) + 1;
+
+    AugmentedGraph {
+        graph: g,
+        layers,
+        layer_count,
+        dummy_edges,
+    }
+}
+
 // ─── Layer Assignment ─────────────────────────────────────────────────────────
 
 /// Result of layer assignment: each node is assigned a layer (rank).
@@ -455,5 +625,169 @@ mod tests {
         let (result, reversed) = remove_cycles(&g);
         assert_eq!(result.node_count(), 0);
         assert!(reversed.is_empty());
+    }
+
+    // ─── insert_dummy_nodes tests ──────────────────────────────────────────
+
+    /// Build a minimal LayerAssignment from a map of id→layer.
+    fn make_layer_assignment(layers: HashMap<String, usize>) -> LayerAssignment {
+        let layer_count = layers.values().copied().max().unwrap_or(0) + 1;
+        LayerAssignment {
+            layers,
+            layer_count,
+            reversed_edges: HashSet::new(),
+        }
+    }
+
+    #[test]
+    fn test_adjacent_edge_no_dummy() {
+        // A(0) → B(1): span 1 — no dummy needed
+        let mut g: DiGraph<NodeData, EdgeData> = DiGraph::new();
+        let a = g.add_node(make_node("A"));
+        let b = g.add_node(make_node("B"));
+        g.add_edge(a, b, make_edge());
+
+        let mut layers = HashMap::new();
+        layers.insert("A".to_string(), 0);
+        layers.insert("B".to_string(), 1);
+        let la = make_layer_assignment(layers);
+
+        let aug = insert_dummy_nodes(&g, &la);
+
+        // Should have exactly 2 nodes (A and B) and 1 edge.
+        assert_eq!(aug.graph.node_count(), 2, "No dummy nodes should be added");
+        assert_eq!(aug.graph.edge_count(), 1);
+        assert!(aug.dummy_edges.is_empty());
+    }
+
+    #[test]
+    fn test_long_edge_one_dummy() {
+        // A(0) → C(2): span 2 — one dummy in layer 1
+        let mut g: DiGraph<NodeData, EdgeData> = DiGraph::new();
+        let a = g.add_node(make_node("A"));
+        let c = g.add_node(make_node("C"));
+        g.add_edge(a, c, make_edge());
+
+        let mut layers = HashMap::new();
+        layers.insert("A".to_string(), 0);
+        layers.insert("C".to_string(), 2);
+        let la = make_layer_assignment(layers);
+
+        let aug = insert_dummy_nodes(&g, &la);
+
+        // 3 nodes total: A, C, and 1 dummy
+        assert_eq!(aug.graph.node_count(), 3, "Should have 1 dummy node");
+        // 2 edges: A→dummy and dummy→C
+        assert_eq!(aug.graph.edge_count(), 2);
+        assert_eq!(aug.dummy_edges.len(), 1);
+
+        let de = &aug.dummy_edges[0];
+        assert_eq!(de.original_src, "A");
+        assert_eq!(de.original_tgt, "C");
+        assert_eq!(de.dummy_ids.len(), 1);
+
+        // The dummy node should be in layer 1
+        let dummy_id = &de.dummy_ids[0];
+        assert_eq!(aug.layers[dummy_id], 1);
+
+        // All edges must connect adjacent layers
+        for edge in aug.graph.edge_references() {
+            let src_id = &aug.graph[edge.source()].id;
+            let tgt_id = &aug.graph[edge.target()].id;
+            let src_layer = aug.layers[src_id];
+            let tgt_layer = aug.layers[tgt_id];
+            assert!(
+                tgt_layer >= src_layer && tgt_layer - src_layer <= 1,
+                "Edge {}→{} spans {} layers (expected ≤1)",
+                src_id, tgt_id, tgt_layer.saturating_sub(src_layer)
+            );
+        }
+    }
+
+    #[test]
+    fn test_long_edge_two_dummies() {
+        // A(0) → D(3): span 3 — two dummies in layers 1 and 2
+        let mut g: DiGraph<NodeData, EdgeData> = DiGraph::new();
+        let a = g.add_node(make_node("A"));
+        let d = g.add_node(make_node("D"));
+        g.add_edge(a, d, make_edge());
+
+        let mut layers = HashMap::new();
+        layers.insert("A".to_string(), 0);
+        layers.insert("D".to_string(), 3);
+        let la = make_layer_assignment(layers);
+
+        let aug = insert_dummy_nodes(&g, &la);
+
+        // 4 nodes: A, D, dummy_0, dummy_1
+        assert_eq!(aug.graph.node_count(), 4);
+        // 3 edges: A→d0, d0→d1, d1→D
+        assert_eq!(aug.graph.edge_count(), 3);
+        assert_eq!(aug.dummy_edges.len(), 1);
+
+        let de = &aug.dummy_edges[0];
+        assert_eq!(de.dummy_ids.len(), 2);
+        assert_eq!(aug.layers[&de.dummy_ids[0]], 1);
+        assert_eq!(aug.layers[&de.dummy_ids[1]], 2);
+    }
+
+    #[test]
+    fn test_multiple_long_edges_independent() {
+        // A(0) → C(2) and B(0) → D(2): two independent long edges
+        let mut g: DiGraph<NodeData, EdgeData> = DiGraph::new();
+        let a = g.add_node(make_node("A"));
+        let b = g.add_node(make_node("B"));
+        let c = g.add_node(make_node("C"));
+        let d = g.add_node(make_node("D"));
+        g.add_edge(a, c, make_edge());
+        g.add_edge(b, d, make_edge());
+
+        let mut layers = HashMap::new();
+        layers.insert("A".to_string(), 0);
+        layers.insert("B".to_string(), 0);
+        layers.insert("C".to_string(), 2);
+        layers.insert("D".to_string(), 2);
+        let la = make_layer_assignment(layers);
+
+        let aug = insert_dummy_nodes(&g, &la);
+
+        // 6 nodes: A, B, C, D + 2 dummies
+        assert_eq!(aug.graph.node_count(), 6);
+        // 4 edges: A→d0, d0→C, B→d1, d1→D
+        assert_eq!(aug.graph.edge_count(), 4);
+        assert_eq!(aug.dummy_edges.len(), 2);
+    }
+
+    #[test]
+    fn test_mixed_short_and_long_edges() {
+        // A(0) → B(1) [short] and A(0) → C(2) [long]
+        let mut g: DiGraph<NodeData, EdgeData> = DiGraph::new();
+        let a = g.add_node(make_node("A"));
+        let b = g.add_node(make_node("B"));
+        let c = g.add_node(make_node("C"));
+        g.add_edge(a, b, make_edge());
+        g.add_edge(a, c, make_edge());
+
+        let mut layers = HashMap::new();
+        layers.insert("A".to_string(), 0);
+        layers.insert("B".to_string(), 1);
+        layers.insert("C".to_string(), 2);
+        let la = make_layer_assignment(layers);
+
+        let aug = insert_dummy_nodes(&g, &la);
+
+        // 4 nodes: A, B, C, 1 dummy
+        assert_eq!(aug.graph.node_count(), 4);
+        // 3 edges: A→B (short), A→dummy, dummy→C
+        assert_eq!(aug.graph.edge_count(), 3);
+        assert_eq!(aug.dummy_edges.len(), 1);
+
+        // Verify all edges are adjacent-layer
+        for edge in aug.graph.edge_references() {
+            let src_id = &aug.graph[edge.source()].id;
+            let tgt_id = &aug.graph[edge.target()].id;
+            let diff = aug.layers[tgt_id].saturating_sub(aug.layers[src_id]);
+            assert!(diff <= 1, "Edge {}→{} not adjacent-layer", src_id, tgt_id);
+        }
     }
 }
