@@ -1,4 +1,4 @@
-# mermaid-ascii-rust
+# Mermaid ASCII rust
 
 A Rust CLI that renders Mermaid flowchart syntax as ASCII/Unicode art.
 
