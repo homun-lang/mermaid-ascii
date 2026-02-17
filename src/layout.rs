@@ -942,15 +942,22 @@ fn collapse_subgraphs(gir: &GraphIR, padding: usize) -> (GraphIR, Vec<CompoundIn
     let mut new_digraph: DiGraph<NodeData, EdgeData> = DiGraph::new();
     let mut new_node_index: HashMap<String, NodeIndex> = HashMap::new();
 
-    // Add non-member nodes (preserve original order)
+    // Add non-member, non-subgraph-ref nodes (preserve original order)
     let mut sorted_nodes: Vec<NodeIndex> = gir.digraph.node_indices().collect();
     sorted_nodes.sort();
     for &ni in &sorted_nodes {
         let data = &gir.digraph[ni];
-        if !member_to_sg.contains_key(data.id.as_str()) {
-            let idx = new_digraph.add_node(data.clone());
-            new_node_index.insert(data.id.clone(), idx);
+        // Skip member nodes (they're inside compound nodes)
+        if member_to_sg.contains_key(data.id.as_str()) {
+            continue;
         }
+        // Skip placeholder nodes whose id matches a subgraph name
+        // (created by ensure_node when a subgraph is used as edge endpoint)
+        if sg_to_compound.contains_key(data.id.as_str()) {
+            continue;
+        }
+        let idx = new_digraph.add_node(data.clone());
+        new_node_index.insert(data.id.clone(), idx);
     }
 
     // Add compound nodes
@@ -966,30 +973,30 @@ fn collapse_subgraphs(gir: &GraphIR, padding: usize) -> (GraphIR, Vec<CompoundIn
         new_node_index.insert(ci.compound_id.clone(), idx);
     }
 
-    // Add edges, redirecting member endpoints to compound nodes
+    // Resolve an edge endpoint: member → compound, sg_name → compound, else keep.
+    let resolve_endpoint = |id: &str| -> String {
+        if let Some(sg) = member_to_sg.get(id) {
+            return sg_to_compound[sg].to_string();
+        }
+        if let Some(cid) = sg_to_compound.get(id) {
+            return cid.to_string();
+        }
+        id.to_string()
+    };
+
+    // Add edges, redirecting member/subgraph endpoints to compound nodes
     let mut added_edges: HashSet<(String, String)> = HashSet::new();
     for edge in gir.digraph.edge_references() {
         let src_id = &gir.digraph[edge.source()].id;
         let tgt_id = &gir.digraph[edge.target()].id;
 
-        let src_sg = member_to_sg.get(src_id.as_str());
-        let tgt_sg = member_to_sg.get(tgt_id.as_str());
+        let actual_src = resolve_endpoint(src_id);
+        let actual_tgt = resolve_endpoint(tgt_id);
 
-        // Both in same subgraph → internal edge, skip
-        if let (Some(s1), Some(s2)) = (src_sg, tgt_sg) {
-            if s1 == s2 {
-                continue;
-            }
+        // Both resolved to same compound node → internal edge, skip
+        if actual_src == actual_tgt {
+            continue;
         }
-
-        let actual_src = match src_sg {
-            Some(sg) => sg_to_compound[sg].to_string(),
-            None => src_id.clone(),
-        };
-        let actual_tgt = match tgt_sg {
-            Some(sg) => sg_to_compound[sg].to_string(),
-            None => tgt_id.clone(),
-        };
 
         // Avoid duplicate edges between same pair
         let key = (actual_src.clone(), actual_tgt.clone());

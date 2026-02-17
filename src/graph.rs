@@ -6,7 +6,7 @@
 
 use petgraph::algo::{is_cyclic_directed, toposort};
 use petgraph::graph::{DiGraph, NodeIndex};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast;
 
@@ -74,9 +74,18 @@ impl GraphIR {
             }
         };
 
-        // Process top-level nodes.
+        // Collect subgraph names first (for subgraph-as-edge-endpoint detection).
+        let sg_names: HashSet<String> = ast_graph
+            .subgraphs
+            .iter()
+            .map(|sg| sg.name.clone())
+            .collect();
+
+        // Process top-level nodes (skip if id matches a subgraph name).
         for node in &ast_graph.nodes {
-            add_node(&mut digraph, &mut node_index, node, None);
+            if !sg_names.contains(&node.id) {
+                add_node(&mut digraph, &mut node_index, node, None);
+            }
         }
 
         // Process subgraphs (flat — collect members for rendering).
@@ -84,8 +93,8 @@ impl GraphIR {
             collect_subgraph(sg, &mut digraph, &mut node_index, &mut subgraph_members);
         }
 
-        // Add top-level edges. Implicitly add any nodes referenced that aren't
-        // already present (can happen if edge references undeclared node ids).
+        // Add top-level edges. If an endpoint matches a subgraph name, create a
+        // placeholder node for it — collapse_subgraphs() will redirect it later.
         for edge in &ast_graph.edges {
             ensure_node(&mut digraph, &mut node_index, &edge.from);
             ensure_node(&mut digraph, &mut node_index, &edge.to);
