@@ -84,6 +84,8 @@ echo '[A] --> [B] --> [C]' | text-graph --ascii
 ```
 [A] --> [B]       # directed arrow
 [A] -- [B]        # undirected line
+[A] <-- [B]       # back arrow (arrow points to A)
+[A] <--> [B]      # bidirectional
 [A] ==> [B]       # thick arrow
 [A] ..> [B]       # dotted arrow
 [A] --> [B] --> [C]   # chained edges
@@ -105,11 +107,17 @@ echo '[A] --> [B] --> [C]' | text-graph --ascii
 ((Circle))        # double parens
 ```
 
+### Multi-line labels
+
+```
+["Line 1\nLine 2"]   # use \n for newlines
+```
+
 ### Direction
 
 ```
-direction: LR     # left-to-right
 direction: TD     # top-down (default)
+direction: LR     # left-to-right
 direction: BT     # bottom-to-top
 direction: RL     # right-to-left
 ```
@@ -120,6 +128,10 @@ direction: RL     # right-to-left
 subgraph "Backend" {
   [API] --> [DB]
 }
+
+subgraph "Empty Group" {
+  desc: "description text shown inside"
+}
 ```
 
 ### Comments
@@ -129,7 +141,9 @@ subgraph "Backend" {
 // This is also a comment
 ```
 
-## Example
+## Examples
+
+### Simple pipeline
 
 ```
 cat <<'EOF' | text-graph
@@ -140,27 +154,66 @@ cat <<'EOF' | text-graph
 [Lint] --> [Deploy]
 EOF
 
-┌───────┐
-│ Start │
-└───┼───┘
-    │
-    │
-    │
-┌───▼───┐
-│ Build │
-└───┼───┘
-    │
-    ┼───────────┼
+      ┌───────┐
+      │ Start │
+      └───┼───┘
+          │
+          │
+          │
+      ┌───▼───┐
+      │ Build │
+      └───┼───┘
+          │
+    ┼─────┼─────┼
     │           │
 ┌───▼──┐    ┌───▼──┐
 │ Lint │    │ Test │
 └───┼──┘    └───┼──┘
     │           │
-    ┼┼──────────┼
-     │
-┌────▼───┐
-│ Deploy │
-└────────┘
+    ┼─────┼─────┼
+          │
+     ┌────▼───┐
+     │ Deploy │
+     └────────┘
+```
+
+### Architecture diagram with subgraphs
+
+```
+text-graph examples/sysarch.txt
+
+     ┌────────────────────────────────────────────────────────┐
+     │                   Svelte + Tailwind                    │
+     │ ┌───────────┐ ┌──────────┐ ┌────────────┐ ┌──────────┐ │
+     │ │ Grid View │ │ Timeline │ │ Board View │ │ LLM Chat │ │
+     │ └───────────┘ └──────────┘ └────────────┘ └──────────┘ │
+     └────────────────────────────┼───────────────────────────┘
+                                  HTTP
+                                  │
+                                  │
+                     ┌────────────▼───────────┐
+                     │   FastAPI + SQLModel   │
+                     └────────────┼───────────┘
+                                  │
+                ┼─────────────────┼──────────────────┼
+                │                 │                  │
+         ┌──────▼─────┐    ┌──────▼─────┐    ┌───────▼──────┐
+         │ PostgreSQL │    │ Claude API │    │    Minio     │
+         └──────▲─────┘    │  tool_use  │    │ (blob store) │
+                │          └────────────┘    └──────────────┘
+                │                 writes
+                ┼─────────────────┼
+                                  │
+┌─────────────────────────────────┼─────────────────────────────────┐
+│                   Git Sync Worker (background)                    │
+│   git fetch -> parse branches/tags -> openapi plugin -> sync DB   │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+Generate all example outputs:
+
+```sh
+bash examples/gen.sh
 ```
 
 ## Architecture
@@ -169,9 +222,8 @@ Pipeline: **DSL text** → **pest parser** → **AST** → **petgraph IR** → *
 
 - Parser: [pest](https://pest.rs/) PEG grammar
 - Graph: [petgraph](https://docs.rs/petgraph/) directed graph
-- Layout: Sugiyama algorithm (cycle removal, layer assignment, crossing minimization, coordinate assignment)
-- Rendering: 2D character canvas with box-drawing character merging
-- Testing: [insta](https://insta.rs/) snapshot tests
+- Layout: Sugiyama algorithm (cycle removal, layer assignment, crossing minimization, coordinate assignment with barycenter refinement)
+- Rendering: 2D character canvas with Unicode box-drawing character merging
 
 ## License
 
