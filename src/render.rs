@@ -404,7 +404,7 @@ fn box_chars_for_shape(shape: &NodeShape, cs: CharSet) -> BoxChars {
 /// Paint a single node box with its label onto the canvas.
 ///
 /// Layout (for Rectangle, height=3):
-/// ```
+/// ```text
 ///   ┌─────────┐
 ///   │  Label  │
 ///   └─────────┘

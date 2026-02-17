@@ -95,3 +95,72 @@ fn snapshot_long_labels() {
     let out = render_dsl(src, true).expect("render failed");
     insta::assert_snapshot!("long_labels", out);
 }
+
+// ─── Phase 7 edge cases ──────────────────────────────────────────────────────
+
+#[test]
+fn snapshot_self_loop() {
+    // Self-loop: a node with an edge back to itself.
+    // Cycle removal removes the self-loop edge; the node still renders.
+    let src = "[Loop] --> [Loop]\n";
+    let out = render_dsl(src, true).expect("render failed");
+    insta::assert_snapshot!("self_loop", out);
+}
+
+#[test]
+fn snapshot_self_loop_ascii() {
+    let src = "[Loop] --> [Loop]\n";
+    let out = render_dsl(src, false).expect("render failed");
+    insta::assert_snapshot!("self_loop_ascii", out);
+}
+
+#[test]
+fn snapshot_very_long_label() {
+    // A single very long label — tests that node width is computed correctly.
+    let src = "[This is a very long node label that spans many characters] --> [Short]\n";
+    let out = render_dsl(src, true).expect("render failed");
+    insta::assert_snapshot!("very_long_label", out);
+}
+
+#[test]
+fn snapshot_very_long_label_chain() {
+    // Two very long labels chained — tests alignment across different widths.
+    let src = concat!(
+        "[This is a very long node label that spans many characters]",
+        " --> [Another quite lengthy label here]\n",
+        "[Another quite lengthy label here] --> [Short]\n",
+    );
+    let out = render_dsl(src, true).expect("render failed");
+    insta::assert_snapshot!("very_long_label_chain", out);
+}
+
+#[test]
+fn snapshot_self_loop_node_topology() {
+    // Validate graph topology for self-loop: exactly 1 node, 1 edge.
+    use text_graph::{graph, parser};
+    let src = "[Loop] --> [Loop]\n";
+    let ast = parser::parse(src).expect("parse failed");
+    let gir = graph::GraphIR::from_ast(&ast);
+    assert_eq!(gir.node_count(), 1, "self-loop: exactly 1 node");
+    assert_eq!(gir.edge_count(), 1, "self-loop: exactly 1 edge");
+}
+
+#[test]
+fn snapshot_disconnected_nodes() {
+    // Two nodes with no edge — disconnected components.
+    let src = "[Alpha]\n[Beta]\n";
+    let out = render_dsl(src, true).expect("render failed");
+    insta::assert_snapshot!("disconnected_nodes", out);
+}
+
+#[test]
+fn snapshot_two_node_cycle_renders() {
+    // A → B → A: a two-node cycle; layout must not panic and must produce output.
+    // The exact node ordering after cycle removal is not deterministic, so we
+    // only assert that the output contains both node labels and is non-empty.
+    let src = "[A] --> [B]\n[B] --> [A]\n";
+    let out = render_dsl(src, true).expect("render failed");
+    assert!(!out.is_empty(), "cycle graph should produce non-empty output");
+    assert!(out.contains("│ A │"), "output should contain node A");
+    assert!(out.contains("│ B │"), "output should contain node B");
+}
