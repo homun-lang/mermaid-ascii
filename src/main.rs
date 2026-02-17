@@ -197,10 +197,10 @@ fn gen_phase1_output() {
     let examples = extract_examples(&examples_txt);
 
     let bad_inputs: &[(&str, &str)] = &[
-        ("missing_closing_bracket", "[A --> [B]\n"),
-        ("empty_edge_target", "[A] -->\n"),
-        ("bad_direction", "direction: DIAG\n[A] --> [B]\n"),
-        ("unclosed_subgraph", "subgraph \"Foo\" {\n  [A]\n"),
+        ("missing_closing_bracket", "graph TD\n    A[Hello --> B\n"),
+        ("empty_edge_target", "graph TD\n    A -->\n"),
+        ("bad_direction", "graph DIAG\n    A --> B\n"),
+        ("unclosed_subgraph", "graph TD\n    subgraph Foo\n        A\n"),
         ("unknown_token", "@ invalid @\n"),
     ];
 
@@ -516,13 +516,13 @@ fn gen_phase5_output() {
     let examples = extract_examples(&examples_txt);
 
     let named_inputs: &[(&str, &str, &str)] = &[
-        ("simple_chain",  "simple_chain.txt",  "[A] --> [B] --> [C]\n"),
-        ("diamond",       "diamond.txt",        "[A] --> [B]\n[A] --> [C]\n[B] --> [D]\n[C] --> [D]\n"),
-        ("labeled_edges", "labeled_edges.txt",  "[A] --> [B] { label: \"step 1\" }\n[B] --> [C] { label: \"step 2\" }\n"),
-        ("subgraph",      "subgraph.txt",       "subgraph \"Group\" {\n  [A] --> [B]\n}\n[B] --> [C]\n"),
-        ("td_layout",     "td_layout.txt",      "direction: TD\n[Start] --> [Middle] --> [End]\n"),
-        ("lr_layout",     "lr_layout.txt",      "direction: LR\n[Start] --> [Middle] --> [End]\n"),
-        ("ascii_mode",    "ascii_mode.txt",     "[A] --> [B] --> [C]\n[A] --> [C]\n"),
+        ("simple_chain",  "simple_chain.txt",  "graph TD\n    A --> B --> C\n"),
+        ("diamond",       "diamond.txt",        "graph TD\n    A --> B\n    A --> C\n    B --> D\n    C --> D\n"),
+        ("labeled_edges", "labeled_edges.txt",  "graph TD\n    A -->|step 1| B\n    B -->|step 2| C\n"),
+        ("subgraph",      "subgraph.txt",       "graph TD\n    subgraph Group\n        A --> B\n    end\n    B --> C\n"),
+        ("td_layout",     "td_layout.txt",      "graph TD\n    Start --> Middle --> End\n"),
+        ("lr_layout",     "lr_layout.txt",      "flowchart LR\n    Start --> Middle --> End\n"),
+        ("ascii_mode",    "ascii_mode.txt",     "graph TD\n    A --> B --> C\n    A --> C\n"),
     ];
 
     for (name, filename, src) in named_inputs {
@@ -552,17 +552,17 @@ fn gen_phase7_output() {
     fs::create_dir_all("out/phase7").unwrap();
 
     let edge_cases: &[(&str, &str, bool)] = &[
-        ("empty_graph",            "# Empty graph — only a comment\n",                                                                                   true),
-        ("single_node_unicode",    "[Alone]\n",                                                                                                           true),
-        ("single_node_ascii",      "[Alone]\n",                                                                                                           false),
-        ("single_rounded_unicode", "(Solo)\n",                                                                                                            true),
-        ("self_loop_unicode",      "[Loop] --> [Loop]\n",                                                                                                 true),
-        ("self_loop_ascii",        "[Loop] --> [Loop]\n",                                                                                                 false),
-        ("long_label_chain",       "[This is a very long node label that spans many characters] --> [Another quite lengthy label here]\n[Another quite lengthy label here] --> [Short]\n", true),
-        ("long_label_simple",      "[This is a very long node label that spans many characters] --> [Short]\n",                                           true),
-        ("long_label_ascii",       "[This is a very long node label that spans many characters] --> [Short]\n",                                           false),
-        ("disconnected_nodes",     "[Alpha]\n[Beta]\n",                                                                                                   true),
-        ("two_node_cycle",         "[A] --> [B]\n[B] --> [A]\n",                                                                                          true),
+        ("empty_graph",            "%% Empty graph — only a comment\n",                                                                                   true),
+        ("single_node_unicode",    "Alone[Alone]\n",                                                                                                      true),
+        ("single_node_ascii",      "Alone[Alone]\n",                                                                                                      false),
+        ("single_rounded_unicode", "Solo(Solo)\n",                                                                                                        true),
+        ("self_loop_unicode",      "Loop[Loop] --> Loop\n",                                                                                               true),
+        ("self_loop_ascii",        "Loop[Loop] --> Loop\n",                                                                                               false),
+        ("long_label_chain",       "A[This is a very long node label that spans many characters] --> B[Another quite lengthy label here]\nB --> C[Short]\n", true),
+        ("long_label_simple",      "A[This is a very long node label that spans many characters] --> B[Short]\n",                                         true),
+        ("long_label_ascii",       "A[This is a very long node label that spans many characters] --> B[Short]\n",                                         false),
+        ("disconnected_nodes",     "Alpha\nBeta\n",                                                                                                       true),
+        ("two_node_cycle",         "A --> B\nB --> A\n",                                                                                                  true),
     ];
 
     let mut out = String::new();
