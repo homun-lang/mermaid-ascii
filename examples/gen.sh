@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Generate output for all examples.
-# Usage: ./scripts/gen_examples.sh
+# Usage: bash examples/gen.sh
 #
-# Builds the project, then renders each .txt example
+# Builds the project, then renders each .mm.md example
 # and writes the output alongside the input as .out.txt.
 # Open the .out.txt files to visually inspect the graph output.
 
@@ -17,9 +17,9 @@ BIN=target/release/text-graph
 # Remove old generated files
 find examples -name '*.out.txt' -delete 2>/dev/null || true
 
-# Process all .txt files recursively
-find examples -name '*.txt' ! -name '*.out.txt' | sort | while read -r src; do
-    out="${src%.txt}.out.txt"
+# Process all .mm.md files recursively
+find examples -name '*.mm.md' | sort | while read -r src; do
+    out="${src%.mm.md}.out.txt"
     echo "  $src -> $out"
     "$BIN" "$src" -o "$out"
 done

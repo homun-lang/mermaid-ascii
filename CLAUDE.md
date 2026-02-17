@@ -55,7 +55,7 @@ This project runs with autonomous Claude agents. **Never ask the user for permis
   - `main.rs` — CLI entry point (clap)
 - `examples/` — Example DSL files + gen script
   - `gen.sh` — Builds project and generates `.out.txt` for all examples
-  - `*.txt` — Input DSL files
+  - `*.mm.md` — Input DSL files
   - `*.out.txt` — Generated output (gitignored)
 - `_ref/` — Cloned reference repos (gitignored)
 
