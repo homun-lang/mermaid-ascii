@@ -1,8 +1,8 @@
-mod ast;
-mod graph;
-mod layout;
-mod parser;
-mod render;
+use text_graph::ast;
+use text_graph::graph;
+use text_graph::layout;
+use text_graph::parser;
+use text_graph::render;
 
 use std::fs;
 use std::io::{self, Read};
