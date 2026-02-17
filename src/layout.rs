@@ -691,6 +691,8 @@ pub struct RoutedEdge {
     pub to_id: String,
     /// Label carried from the original edge, if any.
     pub label: Option<String>,
+    /// Edge type from the original edge (Arrow, BackArrow, etc.).
+    pub edge_type: crate::ast::EdgeType,
     pub waypoints: Vec<Point>,
 }
 
@@ -787,6 +789,7 @@ pub fn route_edges(
             from_id: vis_from.to_string(),
             to_id: vis_to.to_string(),
             label: edge_data.label.clone(),
+            edge_type: edge_data.edge_type.clone(),
             waypoints,
         });
     }

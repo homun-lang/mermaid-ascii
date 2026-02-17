@@ -150,13 +150,16 @@ fn parse_edge_stmt(pair: Pair<Rule>) -> (Vec<Node>, Vec<Edge>) {
     let mut nodes: Vec<Node> = vec![source_node.clone()];
     let mut edges: Vec<Edge> = Vec::new();
 
+    // Extract "label" from attrs if present.
+    let label = attrs.iter().find(|a| a.key == "label").map(|a| a.value.clone());
+
     let mut prev_id = source_node.id.clone();
     for (etype, target_node) in segments {
         let edge = Edge {
             from: prev_id.clone(),
             to: target_node.id.clone(),
             edge_type: etype,
-            label: None,
+            label: label.clone(),
             attrs: attrs.clone(),
         };
         prev_id = target_node.id.clone();

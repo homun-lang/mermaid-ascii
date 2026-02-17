@@ -532,32 +532,6 @@ fn paint_subgraph_borders(
 
 // ─── Edge Rendering ───────────────────────────────────────────────────────────
 
-/// Determine the EdgeType for a visual edge from `from_id` to `to_id`.
-///
-/// Searches the original GraphIR for a matching edge (in either direction,
-/// since back-edges are flipped for display). Falls back to `Arrow`.
-fn edge_type_for(gir: &GraphIR, from_id: &str, to_id: &str) -> EdgeType {
-    use petgraph::visit::EdgeRef;
-
-    // Check forward direction.
-    if let Some(&from_idx) = gir.node_index.get(from_id) {
-        for e in gir.digraph.edges(from_idx) {
-            if gir.digraph[e.target()].id == to_id {
-                return e.weight().edge_type.clone();
-            }
-        }
-    }
-    // Check reverse direction (for reversed back-edges displayed as forward).
-    if let Some(&to_idx) = gir.node_index.get(to_id) {
-        for e in gir.digraph.edges(to_idx) {
-            if gir.digraph[e.target()].id == from_id {
-                return e.weight().edge_type.clone();
-            }
-        }
-    }
-    EdgeType::Arrow
-}
-
 /// Select horizontal and vertical line characters for an edge type.
 fn line_chars_for(edge_type: &EdgeType, cs: CharSet) -> (char, char) {
     let bc = BoxChars::for_charset(cs);
@@ -593,12 +567,13 @@ fn paint_edge(canvas: &mut Canvas, re: &RoutedEdge, edge_type: &EdgeType) {
         // Diagonal segments not supported (orthogonal routing only).
     }
 
-    // Arrowhead at the last waypoint (entry point into target node).
-    let last = re.waypoints.last().unwrap();
-    let prev = &re.waypoints[re.waypoints.len() - 2];
+    // Arrowhead placement depends on edge type.
+    let arrow_at_end = !matches!(edge_type, EdgeType::Line | EdgeType::BackArrow | EdgeType::DoubleLine);
+    let arrow_at_start = matches!(edge_type, EdgeType::BidirArrow | EdgeType::BackArrow);
 
-    // Undirected edges (Line) get no arrowhead.
-    if edge_type != &EdgeType::Line {
+    if arrow_at_end {
+        let last = re.waypoints.last().unwrap();
+        let prev = &re.waypoints[re.waypoints.len() - 2];
         let arrow = if last.y < prev.y {
             bc.arrow_up
         } else if last.y > prev.y {
@@ -611,8 +586,7 @@ fn paint_edge(canvas: &mut Canvas, re: &RoutedEdge, edge_type: &EdgeType) {
         canvas.set(last.x, last.y, arrow);
     }
 
-    // Bidirectional edges get an arrowhead at the start too.
-    if edge_type == &EdgeType::BidirArrow {
+    if arrow_at_start {
         let first = &re.waypoints[0];
         let second = &re.waypoints[1];
         let start_arrow = if first.y < second.y {
@@ -732,8 +706,7 @@ pub fn render(
 
     // 3–5. Edges: line segments, arrowheads, labels.
     for re in routed_edges {
-        let edge_type = edge_type_for(gir, &re.from_id, &re.to_id);
-        paint_edge(&mut canvas, re, &edge_type);
+        paint_edge(&mut canvas, re, &re.edge_type);
     }
 
     canvas.to_string()
