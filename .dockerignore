@@ -1,0 +1,5 @@
+target/
+_ref/
+out/
+*.out.txt
+.git/
