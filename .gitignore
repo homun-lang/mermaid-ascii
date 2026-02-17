@@ -36,6 +36,7 @@ llm*status
 
 
 # Generated example outputs (run scripts/gen_examples.sh to regenerate)
+out/
 *.out.txt
 
 

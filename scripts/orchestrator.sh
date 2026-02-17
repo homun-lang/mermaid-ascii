@@ -8,7 +8,7 @@ PROJECT_DIR="$(pwd)"
 LOG_FILE="${PROJECT_DIR}/out/orchestrator.log"
 MAX_CYCLES="${1:-50}"
 NUM_WORKERS="${2:-2}"
-SESSION="text-graph"
+SESSION="mermaid-ascii-rust"
 CYCLE=0
 
 # Source Rust
@@ -27,7 +27,7 @@ plan_tasks() {
   CLAUDECODE= claude -p \
     --dangerously-skip-permissions \
     --model haiku \
-    "You are the task planner for the text-graph project.
+    "You are the task planner for the mermaid-ascii-rust project.
 Project dir: ${PROJECT_DIR}
 
 Read these files:

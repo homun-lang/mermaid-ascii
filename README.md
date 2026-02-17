@@ -1,10 +1,10 @@
-# text-graph
+# mermaid-ascii-rust
 
 A Rust CLI that renders Mermaid flowchart syntax as ASCII/Unicode art.
 
 ```
 echo 'graph TD
-    A --> B --> C' | text-graph
+    A --> B --> C' | mermaid-ascii-rust
 
 ┌───┐
 │ A │
@@ -32,7 +32,7 @@ cargo install --path .
 ## Usage
 
 ```
-text-graph [OPTIONS] [INPUT]
+mermaid-ascii-rust [OPTIONS] [INPUT]
 
 Arguments:
   [INPUT]  Input file (reads from stdin if omitted)
@@ -47,21 +47,21 @@ Options:
 Read from file:
 
 ```sh
-text-graph examples/flowchart.mm.md
+mermaid-ascii-rust examples/flowchart.mm.md
 ```
 
 Pipe from stdin:
 
 ```sh
 echo 'graph LR
-    A --> B' | text-graph
+    A --> B' | mermaid-ascii-rust
 ```
 
 ASCII mode:
 
 ```
 echo 'graph TD
-    A --> B --> C' | text-graph --ascii
+    A --> B --> C' | mermaid-ascii-rust --ascii
 
 +---+
 | A |
@@ -143,7 +143,7 @@ A --> B  %% inline comment
 ### Flowchart with shapes and labels
 
 ```
-cat <<'EOF' | text-graph
+cat <<'EOF' | mermaid-ascii-rust
 graph TD
     Start[Start] --> Decision{Decision}
     Decision -->|yes| ProcessA[Process A]
@@ -178,7 +178,7 @@ EOF
 ### Left-to-right pipeline
 
 ```
-cat <<'EOF' | text-graph
+cat <<'EOF' | mermaid-ascii-rust
 flowchart LR
     Source --> Build --> Test --> Deploy
     Build --> Lint

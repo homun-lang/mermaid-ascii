@@ -1,7 +1,7 @@
 #!/bin/bash
 # stop.sh — Stop the tmux orchestrator session and all workers
 cd "$(dirname "$0")/.." || exit 1
-SESSION="text-graph"
+SESSION="mermaid-ascii-rust"
 
 echo "Stopping tmux session: ${SESSION}"
 tmux kill-session -t "$SESSION" 2>/dev/null && echo "Stopped." || echo "No session found."

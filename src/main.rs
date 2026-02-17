@@ -1,17 +1,17 @@
-use text_graph::ast;
-use text_graph::graph;
-use text_graph::layout;
-use text_graph::parser;
-use text_graph::render;
+use mermaid_ascii_rust::ast;
+use mermaid_ascii_rust::graph;
+use mermaid_ascii_rust::layout;
+use mermaid_ascii_rust::parser;
+use mermaid_ascii_rust::render;
 
 use std::fs;
 use std::io::{self, Read};
 
 use clap::Parser as ClapParser;
 
-/// text-graph: DSL text input → ASCII/Unicode graph output
+/// mermaid-ascii-rust: Mermaid flowchart → ASCII/Unicode graph output
 #[derive(ClapParser, Debug)]
-#[command(name = "text-graph", version, about)]
+#[command(name = "mermaid-ascii-rust", version, about)]
 struct Cli {
     /// Input file (reads from stdin if omitted)
     input: Option<String>,

@@ -1,4 +1,4 @@
-// text-graph PEG Grammar (pest)
+// mermaid-ascii-rust PEG Grammar (pest)
 // Mermaid flowchart syntax — aligned with mermaid-ascii / beautiful-mermaid
 //
 // Key pest behaviors:

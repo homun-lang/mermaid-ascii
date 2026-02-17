@@ -36,7 +36,7 @@ fi
 CLAUDECODE= claude -p \
   --dangerously-skip-permissions \
   --model sonnet \
-  "You are Senior Programmer #${WORKER_ID} on the text-graph project team.
+  "You are Senior Programmer #${WORKER_ID} on the mermaid-ascii-rust project team.
 You are one of several senior programmers working IN PARALLEL on this project.
 Project dir: ${PROJECT_DIR}
 

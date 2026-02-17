@@ -1,4 +1,4 @@
-# CLAUDE.md — text-graph project instructions
+# CLAUDE.md — mermaid-ascii-rust project instructions
 
 ## Project Overview
 Mermaid flowchart syntax → Parse → Graph layout → ASCII/Unicode text output (Rust).

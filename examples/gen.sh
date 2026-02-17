@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 echo "Building..."
 cargo build --release --quiet
 
-BIN=target/release/text-graph
+BIN=target/release/mermaid-ascii-rust
 
 # Remove old generated files
 find examples -name '*.out.txt' -delete 2>/dev/null || true
