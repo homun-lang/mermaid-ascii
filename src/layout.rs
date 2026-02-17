@@ -524,6 +524,413 @@ impl LayerAssignment {
     }
 }
 
+// ─── Crossing Minimization (Barycenter) ───────────────────────────────────────
+
+/// Minimise edge crossings using the barycenter heuristic.
+///
+/// Takes the augmented graph (with dummy nodes) and returns an ordering for
+/// each layer that reduces edge crossings. Multiple top-down + bottom-up passes
+/// are run until the crossing count stops improving (or a pass limit is hit).
+///
+/// Returns a `Vec<Vec<String>>` — one inner vec per layer, in minimised order.
+pub fn minimise_crossings(aug: &AugmentedGraph) -> Vec<Vec<String>> {
+    let layer_count = aug.layer_count;
+
+    // Initial ordering: group by layer, sort alphabetically for determinism.
+    let mut ordering: Vec<Vec<String>> = vec![Vec::new(); layer_count];
+    let mut ids: Vec<String> = aug.layers.keys().cloned().collect();
+    ids.sort();
+    for id in ids {
+        let layer = aug.layers[&id];
+        ordering[layer].push(id);
+    }
+
+    // Build id → NodeIndex for the augmented graph.
+    let id_to_idx: HashMap<String, NodeIndex> = aug
+        .graph
+        .node_indices()
+        .map(|ni| (aug.graph[ni].id.clone(), ni))
+        .collect();
+
+    let max_passes = 24;
+    let mut best = count_crossings(&ordering, &id_to_idx, &aug.graph);
+
+    for _pass in 0..max_passes {
+        // Top-down sweep: use predecessor positions as barycenter weights.
+        for layer_idx in 1..layer_count {
+            // Clone the previous layer's ids so we can borrow ordering[layer_idx] mutably.
+            let prev_ids: Vec<String> = ordering[layer_idx - 1].clone();
+            let prev: HashMap<&str, f64> = prev_ids
+                .iter()
+                .enumerate()
+                .map(|(i, id)| (id.as_str(), i as f64))
+                .collect();
+            ordering[layer_idx].sort_by(|a, b| {
+                let wa = barycenter(a, &aug.graph, &id_to_idx, &prev, petgraph::Direction::Incoming);
+                let wb = barycenter(b, &aug.graph, &id_to_idx, &prev, petgraph::Direction::Incoming);
+                wa.partial_cmp(&wb).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        // Bottom-up sweep: use successor positions as barycenter weights.
+        for layer_idx in (0..layer_count.saturating_sub(1)).rev() {
+            // Clone the next layer's ids to avoid simultaneous borrow conflict.
+            let next_ids: Vec<String> = ordering[layer_idx + 1].clone();
+            let next: HashMap<&str, f64> = next_ids
+                .iter()
+                .enumerate()
+                .map(|(i, id)| (id.as_str(), i as f64))
+                .collect();
+            ordering[layer_idx].sort_by(|a, b| {
+                let wa = barycenter(a, &aug.graph, &id_to_idx, &next, petgraph::Direction::Outgoing);
+                let wb = barycenter(b, &aug.graph, &id_to_idx, &next, petgraph::Direction::Outgoing);
+                wa.partial_cmp(&wb).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        let new = count_crossings(&ordering, &id_to_idx, &aug.graph);
+        if new >= best {
+            break;
+        }
+        best = new;
+    }
+
+    ordering
+}
+
+/// Average position of a node's neighbours in the adjacent layer (barycenter weight).
+fn barycenter(
+    node_id: &str,
+    graph: &DiGraph<NodeData, EdgeData>,
+    id_to_idx: &HashMap<String, NodeIndex>,
+    neighbor_pos: &HashMap<&str, f64>,
+    direction: petgraph::Direction,
+) -> f64 {
+    let Some(ni) = id_to_idx.get(node_id) else {
+        return f64::MAX;
+    };
+    let positions: Vec<f64> = graph
+        .neighbors_directed(*ni, direction)
+        .filter_map(|nb| neighbor_pos.get(graph[nb].id.as_str()).copied())
+        .collect();
+    if positions.is_empty() {
+        return f64::MAX;
+    }
+    positions.iter().sum::<f64>() / positions.len() as f64
+}
+
+/// Count edge crossings between consecutive layers (inversion count heuristic).
+fn count_crossings(
+    ordering: &[Vec<String>],
+    id_to_idx: &HashMap<String, NodeIndex>,
+    graph: &DiGraph<NodeData, EdgeData>,
+) -> usize {
+    let mut total = 0;
+    for l in 0..ordering.len().saturating_sub(1) {
+        let tgt_pos: HashMap<&str, usize> = ordering[l + 1]
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.as_str(), i))
+            .collect();
+        let mut edges: Vec<(usize, usize)> = Vec::new();
+        for (sp, sid) in ordering[l].iter().enumerate() {
+            if let Some(ni) = id_to_idx.get(sid) {
+                for nb in graph.neighbors_directed(*ni, petgraph::Direction::Outgoing) {
+                    if let Some(&tp) = tgt_pos.get(graph[nb].id.as_str()) {
+                        edges.push((sp, tp));
+                    }
+                }
+            }
+        }
+        for i in 0..edges.len() {
+            for j in i + 1..edges.len() {
+                if (edges[i].0 < edges[j].0 && edges[i].1 > edges[j].1)
+                    || (edges[i].0 > edges[j].0 && edges[i].1 < edges[j].1)
+                {
+                    total += 1;
+                }
+            }
+        }
+    }
+    total
+}
+
+// ─── Coordinate Assignment ────────────────────────────────────────────────────
+
+/// Character-unit geometry constants (TD layout).
+const NODE_PADDING: usize = 1; // spaces inside brackets on each side of label
+const H_GAP: usize = 4;        // horizontal gap (chars) between nodes in same layer
+const V_GAP: usize = 3;        // vertical gap (rows) between adjacent layers
+const NODE_HEIGHT: usize = 3;  // top-border + text-row + bottom-border
+
+/// Assign (x, y) character coordinates to every node in the augmented graph.
+///
+/// Layout is top-down (TD): x = column, y = row. The renderer transposes for LR.
+/// Dummy nodes are given width 1 to minimise horizontal space consumption.
+pub fn assign_coordinates(ordering: &[Vec<String>], aug: &AugmentedGraph) -> Vec<LayoutNode> {
+    // Precompute the Y (top row) of each layer.
+    let layer_y: Vec<usize> = {
+        let mut y = 0;
+        ordering
+            .iter()
+            .map(|_| {
+                let top = y;
+                y += NODE_HEIGHT + V_GAP;
+                top
+            })
+            .collect()
+    };
+
+    // Build id → label-length lookup from augmented graph.
+    let id_to_label_len: HashMap<&str, usize> = aug
+        .graph
+        .node_indices()
+        .map(|ni| (aug.graph[ni].id.as_str(), aug.graph[ni].label.len()))
+        .collect();
+
+    let mut nodes: Vec<LayoutNode> = Vec::new();
+    for (layer_idx, layer_nodes) in ordering.iter().enumerate() {
+        let mut x = 0usize;
+        for (order, id) in layer_nodes.iter().enumerate() {
+            let label_len = id_to_label_len.get(id.as_str()).copied().unwrap_or(0);
+            // Dummy nodes have empty labels; give them width 1.
+            let width = if label_len == 0 && id.starts_with(DUMMY_PREFIX) {
+                1
+            } else {
+                label_len + 2 + 2 * NODE_PADDING // "[" + pad + label + pad + "]"
+            };
+            nodes.push(LayoutNode {
+                id: id.clone(),
+                layer: layer_idx,
+                order,
+                x,
+                y: layer_y[layer_idx],
+                width,
+                height: NODE_HEIGHT,
+            });
+            x += width + H_GAP;
+        }
+    }
+    nodes
+}
+
+// ─── Edge Routing (Orthogonal) ────────────────────────────────────────────────
+
+/// A 2D point in character coordinates (column, row).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Point {
+    pub x: usize,
+    pub y: usize,
+}
+
+/// A routed edge: the from/to node ids, an optional label, and the ordered
+/// list of waypoints that form the orthogonal (H/V segments only) path.
+///
+/// The path goes:  exit point (on source node border)
+///                  → [intermediate bend points through inter-layer gaps]
+///                  → entry point (on target node border).
+#[derive(Debug, Clone)]
+pub struct RoutedEdge {
+    pub from_id: String,
+    pub to_id: String,
+    /// Label carried from the original edge, if any.
+    pub label: Option<String>,
+    pub waypoints: Vec<Point>,
+}
+
+/// Route all edges in `gir` orthogonally through inter-layer gap spaces.
+///
+/// For each original edge u → v (from `gir`, not the augmented graph):
+///   1. Exit point = bottom-centre of u's node box.
+///   2. Entry point = top-centre of v's node box.
+///   3. Route through the midpoint of each inter-layer gap between their layers,
+///      using dummy node x-positions to align through intermediate layers.
+///
+/// Back-edges (reversed during cycle removal) are displayed with from/to
+/// swapped so the arrowhead points in the intended direction.
+///
+/// Self-loops are skipped (they were removed during cycle removal).
+pub fn route_edges(
+    gir: &GraphIR,
+    layout_nodes: &[LayoutNode],
+    aug: &AugmentedGraph,
+    reversed_edges: &HashSet<EdgeIndex>,
+) -> Vec<RoutedEdge> {
+    // Fast id → LayoutNode lookup.
+    let node_map: HashMap<&str, &LayoutNode> =
+        layout_nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+
+    // Per-layer geometry: top-Y and bottom-Y of the tallest node in each layer.
+    let layer_count = layout_nodes.iter().map(|n| n.layer).max().map(|m| m + 1).unwrap_or(0);
+    let mut layer_top_y = vec![usize::MAX; layer_count.max(1)];
+    let mut layer_bottom_y = vec![0usize; layer_count.max(1)];
+    for n in layout_nodes {
+        if n.y < layer_top_y[n.layer] {
+            layer_top_y[n.layer] = n.y;
+        }
+        let bot = n.y + n.height;
+        if bot > layer_bottom_y[n.layer] {
+            layer_bottom_y[n.layer] = bot;
+        }
+    }
+
+    // Build lookup: (original_src_id, original_tgt_id) → dummy x-positions per gap.
+    // The dummy x is the horizontal centre of the dummy node for that gap.
+    let mut dummy_xs_map: HashMap<(String, String), Vec<usize>> = HashMap::new();
+    for de in &aug.dummy_edges {
+        let xs: Vec<usize> = de
+            .dummy_ids
+            .iter()
+            .filter_map(|did| node_map.get(did.as_str()).map(|n| n.x + n.width / 2))
+            .collect();
+        dummy_xs_map.insert((de.original_src.clone(), de.original_tgt.clone()), xs);
+    }
+
+    let mut routes: Vec<RoutedEdge> = Vec::new();
+
+    for edge in gir.digraph.edge_references() {
+        // Self-loops were removed during cycle removal — skip.
+        if edge.source() == edge.target() {
+            continue;
+        }
+
+        let is_reversed = reversed_edges.contains(&edge.id());
+        let edge_data = edge.weight();
+
+        // Visual from/to: flip if this is a reversed back-edge.
+        let (vis_from, vis_to) = if is_reversed {
+            (
+                gir.digraph[edge.target()].id.as_str(),
+                gir.digraph[edge.source()].id.as_str(),
+            )
+        } else {
+            (
+                gir.digraph[edge.source()].id.as_str(),
+                gir.digraph[edge.target()].id.as_str(),
+            )
+        };
+
+        let Some(from_node) = node_map.get(vis_from) else { continue };
+        let Some(to_node) = node_map.get(vis_to) else { continue };
+
+        // Retrieve dummy x-positions for skip-level routing (empty for adjacent edges).
+        let empty: Vec<usize> = Vec::new();
+        let dummy_xs = dummy_xs_map
+            .get(&(vis_from.to_string(), vis_to.to_string()))
+            .unwrap_or(&empty);
+
+        let waypoints = compute_orthogonal_waypoints(
+            from_node,
+            to_node,
+            &layer_top_y,
+            &layer_bottom_y,
+            dummy_xs,
+        );
+
+        routes.push(RoutedEdge {
+            from_id: vis_from.to_string(),
+            to_id: vis_to.to_string(),
+            label: edge_data.label.clone(),
+            waypoints,
+        });
+    }
+
+    routes
+}
+
+/// Compute the orthogonal waypoints for a single edge from `from` to `to`.
+///
+/// Strategy (TD layout):
+///   - Exit = bottom-centre of `from`.
+///   - Entry = top-centre of `to`.
+///   - For each inter-layer gap between from.layer and to.layer, drop a bend
+///     point at the midpoint row of that gap. Use `dummy_xs[i]` for the x
+///     position at gap i (from dummy node insertion), or fall back to exit_x /
+///     entry_x for the first and last gaps respectively.
+///   - Same-layer edges get a U-shape looping below the layer.
+fn compute_orthogonal_waypoints(
+    from: &LayoutNode,
+    to: &LayoutNode,
+    layer_top_y: &[usize],
+    layer_bottom_y: &[usize],
+    dummy_xs: &[usize],
+) -> Vec<Point> {
+    let exit_x = from.x + from.width / 2;
+    let exit_y = from.y + from.height - 1; // bottom border row
+    let entry_x = to.x + to.width / 2;
+    let entry_y = to.y;                    // top border row
+
+    let src_layer = from.layer;
+    let tgt_layer = to.layer;
+
+    // Same-layer: U-shape going below the layer.
+    if src_layer == tgt_layer {
+        let below_y = layer_bottom_y.get(src_layer).copied().unwrap_or(exit_y + 1) + V_GAP / 2;
+        return vec![
+            Point { x: exit_x, y: exit_y },
+            Point { x: exit_x, y: below_y },
+            Point { x: entry_x, y: below_y },
+            Point { x: entry_x, y: entry_y },
+        ];
+    }
+
+    let (low_layer, high_layer) = if src_layer < tgt_layer {
+        (src_layer, tgt_layer)
+    } else {
+        (tgt_layer, src_layer)
+    };
+
+    let mut waypoints: Vec<Point> = vec![Point { x: exit_x, y: exit_y }];
+
+    let gaps = high_layer - low_layer;
+    for gap_idx in 0..gaps {
+        let gap = low_layer + gap_idx;
+
+        // Midpoint row of the inter-layer gap.
+        let gap_start = layer_bottom_y.get(gap).copied().unwrap_or(exit_y + 1);
+        let gap_end = layer_top_y.get(gap + 1).copied().unwrap_or(gap_start + V_GAP);
+        let mid_y = gap_start + (gap_end.saturating_sub(gap_start)) / 2;
+
+        // X at this gap: use dummy node centre if available, else interpolate.
+        let gap_x = dummy_xs.get(gap_idx).copied().unwrap_or(if gap_idx == 0 { exit_x } else { entry_x });
+
+        let last_wp = waypoints.last().unwrap();
+
+        // Horizontal move (if needed), then vertical move to mid_y.
+        if last_wp.x != gap_x {
+            let last_y = last_wp.y;
+            waypoints.push(Point { x: gap_x, y: last_y });
+        }
+        waypoints.push(Point { x: gap_x, y: mid_y });
+    }
+
+    // Final horizontal move to entry_x, then down to entry_y.
+    let last_wp = waypoints.last().unwrap();
+    if last_wp.x != entry_x {
+        let last_y = last_wp.y;
+        waypoints.push(Point { x: entry_x, y: last_y });
+    }
+    waypoints.push(Point { x: entry_x, y: entry_y });
+
+    waypoints
+}
+
+/// Run the full layout pipeline and return positioned nodes + routed edges.
+///
+/// Steps:
+///   1. Layer assignment (includes cycle removal via greedy-FAS).
+///   2. Dummy node insertion for skip-level edges.
+///   3. Crossing minimisation (barycenter heuristic, multi-pass).
+///   4. Coordinate assignment.
+///   5. Edge routing (orthogonal, through inter-layer gap spaces).
+pub fn full_layout(gir: &GraphIR) -> (Vec<LayoutNode>, Vec<RoutedEdge>) {
+    let la = LayerAssignment::assign(gir);
+    let (dag, reversed_edges) = remove_cycles(&gir.digraph);
+    let aug = insert_dummy_nodes(&dag, &la);
+    let ordering = minimise_crossings(&aug);
+    let layout_nodes = assign_coordinates(&ordering, &aug);
+    let routed_edges = route_edges(gir, &layout_nodes, &aug, &reversed_edges);
+    (layout_nodes, routed_edges)
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
