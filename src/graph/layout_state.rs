@@ -847,13 +847,12 @@ pub fn erl_push(
     edge_type: String,
     waypoints: PointList,
 ) {
-    let wps: Vec<(i32, i32)> = waypoints.borrow().clone();
     el.borrow_mut().push(EdgeRouteInfo {
         from_id,
         to_id,
         label,
         edge_type,
-        waypoints: wps,
+        waypoints,
     });
 }
 

@@ -951,10 +951,10 @@ fn route_edges_rust(
         }
     }
 
-    let grid = pathfinder::grid_new(max_x, max_y);
+    let mut grid = pathfinder::grid_new(max_x, max_y);
     for i in 0..nn {
         pathfinder::grid_mark_blocked(
-            grid.clone(),
+            &mut grid,
             graph::nll_get_x(nodes.clone(), i),
             graph::nll_get_y(nodes.clone(), i),
             graph::nll_get_width(nodes.clone(), i),
@@ -994,36 +994,25 @@ fn route_edges_rust(
             + graph::nll_get_width(nodes.clone(), to_idx) / 2;
         let entry_y = graph::nll_get_y(nodes.clone(), to_idx) - 1;
 
-        let path = pathfinder::a_star(grid.clone(), exit_x, exit_y, entry_x, entry_y);
-        let plen = graph::point_list_len(path.clone());
+        let mut path = pathfinder::a_star(&mut grid, exit_x, exit_y, entry_x, entry_y);
+        let plen = graph::point_list_len(&path);
 
-        let waypoints = if plen > 0 {
-            pathfinder::simplify_path(path)
+        let mut waypoints = if plen > 0 {
+            pathfinder::simplify_path(&mut path)
         } else {
             // Fallback: orthogonal L-path
-            let wp = graph::point_list_new();
             let mid_y = (exit_y + entry_y) / 2;
-            graph::point_list_push(wp.clone(), exit_x, exit_y);
-            graph::point_list_push(wp.clone(), exit_x, mid_y);
-            graph::point_list_push(wp.clone(), entry_x, mid_y);
-            graph::point_list_push(wp.clone(), entry_x, entry_y);
-            wp
+            vec![
+                (exit_x, exit_y),
+                (exit_x, mid_y),
+                (entry_x, mid_y),
+                (entry_x, entry_y),
+            ]
         };
 
-        // Extract to Vec, fix vertical endpoints, rebuild PointList
-        let n_wp = graph::point_list_len(waypoints.clone());
-        let mut wp_vec: Vec<(i32, i32)> = (0..n_wp)
-            .map(|i| {
-                let x = graph::point_list_get_x(waypoints.clone(), i);
-                let y = graph::point_list_get_y(waypoints.clone(), i);
-                (x, y)
-            })
-            .collect();
-        ensure_vertical_endpoints(&mut wp_vec);
-        let fixed_wp = graph::point_list_new();
-        for (x, y) in wp_vec {
-            graph::point_list_push(fixed_wp.clone(), x, y);
-        }
+        // Fix vertical endpoints
+        ensure_vertical_endpoints(&mut waypoints);
+        let fixed_wp = waypoints;
 
         let label = ed.label.clone().unwrap_or_default();
         graph::erl_push(
