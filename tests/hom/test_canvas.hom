@@ -13,7 +13,7 @@ use canvas
 
 // Print FAIL with message when condition is false; otherwise silent.
 check := (cond: bool, msg: str) -> _ {
-  if (cond) do {
+  if (cond) {
     print("  ok: ${msg}")
   } else {
     print("FAIL: ${msg}")
@@ -40,9 +40,9 @@ test_canvas_new_all_spaces := () -> _ {
   check(c.height == 3, "canvas height == 3")
   // All cells start as space
   all_spaces := true
-  for row in range(3) do {
-    for col in range(5) do {
-      if (canvas_get(c, col, row) != " ") do {
+  for row in range(3) {
+    for col in range(5) {
+      if (canvas_get(c, col, row) != " ") {
         all_spaces := false
       }
     }
@@ -74,9 +74,9 @@ test_canvas_set_out_of_bounds_is_noop := () -> _ {
   canvas_set(c,  0, 3, "X")
   // Nothing changed — all cells should still be spaces
   all_spaces := true
-  for row in range(3) do {
-    for col in range(3) do {
-      if (canvas_get(c, col, row) != " ") do {
+  for row in range(3) {
+    for col in range(3) {
+      if (canvas_get(c, col, row) != " ") {
         all_spaces := false
       }
     }
@@ -109,9 +109,9 @@ test_canvas_set_merge_oob_is_noop := () -> _ {
   canvas_set_merge(c,  0, 3, "+")
   // Canvas is still all spaces
   all_spaces := true
-  for row in range(3) do {
-    for col in range(3) do {
-      if (canvas_get(c, col, row) != " ") do {
+  for row in range(3) {
+    for col in range(3) {
+      if (canvas_get(c, col, row) != " ") {
         all_spaces := false
       }
     }
@@ -126,8 +126,8 @@ test_canvas_hline := () -> _ {
   canvas_hline(c, 2, 1, 5, "-")
   // Cells from col 1..5 on row 2 are "-"
   all_dashes := true
-  for col in range(1, 6) do {
-    if (canvas_get(c, col, 2) != "-") do {
+  for col in range(1, 6) {
+    if (canvas_get(c, col, 2) != "-") {
       all_dashes := false
     }
   }
@@ -141,8 +141,8 @@ test_canvas_hline_reversed_coords := () -> _ {
   c := canvas_new(10, 5, CharSet.Ascii)
   canvas_hline(c, 0, 5, 2, "-")   // x1=5, x2=2 (reversed)
   all_dashes := true
-  for col in range(2, 6) do {
-    if (canvas_get(c, col, 0) != "-") do {
+  for col in range(2, 6) {
+    if (canvas_get(c, col, 0) != "-") {
       all_dashes := false
     }
   }
@@ -155,8 +155,8 @@ test_canvas_vline := () -> _ {
   c := canvas_new(5, 10, CharSet.Ascii)
   canvas_vline(c, 3, 1, 5, "|")
   all_pipes := true
-  for row in range(1, 6) do {
-    if (canvas_get(c, 3, row) != "|") do {
+  for row in range(1, 6) {
+    if (canvas_get(c, 3, row) != "|") {
       all_pipes := false
     }
   }
@@ -196,9 +196,9 @@ test_canvas_draw_box_too_small := () -> _ {
   canvas_draw_box(c, r2, bc)
   // Nothing drawn
   all_spaces := true
-  for row in range(5) do {
-    for col in range(5) do {
-      if (canvas_get(c, col, row) != " ") do {
+  for row in range(5) {
+    for col in range(5) {
+      if (canvas_get(c, col, row) != " ") {
         all_spaces := false
       }
     }

@@ -36,7 +36,7 @@ use test_dummy
 // String literals in the msg argument are .to_string()'d by codegen.
 
 check := (cond: bool, msg: str) -> _ {
-  if (cond) do {
+  if (cond) {
     print("  ok: ${msg}")
   } else {
     print("FAIL: ${msg}")

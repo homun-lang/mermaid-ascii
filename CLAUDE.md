@@ -2,6 +2,8 @@
 
 ## On Start — Read These First
 
+always working at ./.tmp/ don't /tmp/
+
 1. `README.md` — project overview, architecture, tech stack
 2. `.tmp/llm.plan.status` — ticket list and current status (pick `[ ]` tickets to work on)
 3. `.tmp/llm.working.log` — abstract of recent completed work

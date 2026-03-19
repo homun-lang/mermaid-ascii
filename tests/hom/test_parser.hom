@@ -22,7 +22,7 @@ use parser
 // ── Test helper ───────────────────────────────────────────────────────────────
 
 check := (cond: bool, msg: str) -> _ {
-  if (cond) do {
+  if (cond) {
     print("  ok: ${msg}")
   } else {
     print("FAIL: ${msg}")

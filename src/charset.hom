@@ -86,14 +86,14 @@ box_chars_ascii := () -> BoxChars {
 // Return the standard BoxChars for the given CharSet.
 box_chars_for_charset := (cs: CharSet) -> BoxChars {
   match cs {
-    CharSet.Unicode => box_chars_unicode()
-    CharSet.Ascii   => box_chars_ascii()
+    CharSet.Unicode -> box_chars_unicode()
+    CharSet.Ascii   -> box_chars_ascii()
   }
 }
 
 // Rounded corners variant: ╭╮╰╯ in Unicode; falls back to plain ASCII.
 box_chars_rounded := (cs: CharSet) -> BoxChars {
-  if (cs == CharSet.Ascii) do {
+  if (cs == CharSet.Ascii) {
     box_chars_ascii()
   } else {
     bc := box_chars_unicode()
@@ -147,21 +147,21 @@ arms_new := (up: bool, down: bool, left: bool, right: bool) -> Arms {
 // Returns Arms with valid=false for characters that are not recognised junction characters.
 arms_from_char := (c: str) -> Arms {
   match c {
-    "─" => arms_new(false, false, true,  true)
-    "-" => arms_new(false, false, true,  true)
-    "│" => arms_new(true,  true,  false, false)
-    "|" => arms_new(true,  true,  false, false)
-    "┌" => arms_new(false, true,  false, true)
-    "┐" => arms_new(false, true,  true,  false)
-    "└" => arms_new(true,  false, false, true)
-    "┘" => arms_new(true,  false, true,  false)
-    "├" => arms_new(true,  true,  false, true)
-    "┤" => arms_new(true,  true,  true,  false)
-    "┬" => arms_new(false, true,  true,  true)
-    "┴" => arms_new(true,  false, true,  true)
-    "┼" => arms_new(true,  true,  true,  true)
-    "+" => arms_new(true,  true,  true,  true)
-    _   => Arms { valid: false, up: false, down: false, left: false, right: false }
+    "─" -> arms_new(false, false, true,  true)
+    "-" -> arms_new(false, false, true,  true)
+    "│" -> arms_new(true,  true,  false, false)
+    "|" -> arms_new(true,  true,  false, false)
+    "┌" -> arms_new(false, true,  false, true)
+    "┐" -> arms_new(false, true,  true,  false)
+    "└" -> arms_new(true,  false, false, true)
+    "┘" -> arms_new(true,  false, true,  false)
+    "├" -> arms_new(true,  true,  false, true)
+    "┤" -> arms_new(true,  true,  true,  false)
+    "┬" -> arms_new(false, true,  true,  true)
+    "┴" -> arms_new(true,  false, true,  true)
+    "┼" -> arms_new(true,  true,  true,  true)
+    "+" -> arms_new(true,  true,  true,  true)
+    _   -> Arms { valid: false, up: false, down: false, left: false, right: false }
   }
 }
 
@@ -180,10 +180,10 @@ arms_merge := (a: Arms, b: Arms) -> Arms {
 // Encode Arms as a 4-bit integer for character dispatch.
 // Bit layout: up=8, down=4, left=2, right=1
 arms_key := (a: Arms) -> int {
-  u := if (a.up)    do { 8 } else { 0 }
-  d := if (a.down)  do { 4 } else { 0 }
-  l := if (a.left)  do { 2 } else { 0 }
-  r := if (a.right) do { 1 } else { 0 }
+  u := if (a.up) { 8 } else { 0 }
+  d := if (a.down) { 4 } else { 0 }
+  l := if (a.left) { 2 } else { 0 }
+  r := if (a.right) { 1 } else { 0 }
   u + d + l + r
 }
 
@@ -193,22 +193,22 @@ arms_to_char := (a: Arms, cs: CharSet) -> str {
   bc  := box_chars_for_charset(cs)
   key := arms_key(a)
   match key {
-    0  => " "
-    3  => bc.horizontal    // (F,F,T,T) — left + right
-    12 => bc.vertical      // (T,T,F,F) — up + down
-    5  => bc.top_left      // (F,T,F,T) — down + right  → ┌
-    6  => bc.top_right     // (F,T,T,F) — down + left   → ┐
-    9  => bc.bottom_left   // (T,F,F,T) — up + right    → └
-    10 => bc.bottom_right  // (T,F,T,F) — up + left     → ┘
-    13 => bc.tee_right     // (T,T,F,T) — up+down+right → ├
-    14 => bc.tee_left      // (T,T,T,F) — up+down+left  → ┤
-    7  => bc.tee_down      // (F,T,T,T) — down+l+r      → ┬
-    11 => bc.tee_up        // (T,F,T,T) — up+l+r        → ┴
-    15 => bc.cross         // (T,T,T,T) — all arms      → ┼
-    8  => bc.vertical      // (T,F,F,F) — up only
-    4  => bc.vertical      // (F,T,F,F) — down only
-    2  => bc.horizontal    // (F,F,T,F) — left only
-    1  => bc.horizontal    // (F,F,F,T) — right only
-    _  => " "
+    0  -> " "
+    3  -> bc.horizontal    // (F,F,T,T) — left + right
+    12 -> bc.vertical      // (T,T,F,F) — up + down
+    5  -> bc.top_left      // (F,T,F,T) — down + right  → ┌
+    6  -> bc.top_right     // (F,T,T,F) — down + left   → ┐
+    9  -> bc.bottom_left   // (T,F,F,T) — up + right    → └
+    10 -> bc.bottom_right  // (T,F,T,F) — up + left     → ┘
+    13 -> bc.tee_right     // (T,T,F,T) — up+down+right → ├
+    14 -> bc.tee_left      // (T,T,T,F) — up+down+left  → ┤
+    7  -> bc.tee_down      // (F,T,T,T) — down+l+r      → ┬
+    11 -> bc.tee_up        // (T,F,T,T) — up+l+r        → ┴
+    15 -> bc.cross         // (T,T,T,T) — all arms      → ┼
+    8  -> bc.vertical      // (T,F,F,F) — up only
+    4  -> bc.vertical      // (F,T,F,F) — down only
+    2  -> bc.horizontal    // (F,F,T,F) — left only
+    1  -> bc.horizontal    // (F,F,F,T) — right only
+    _  -> " "
   }
 }
