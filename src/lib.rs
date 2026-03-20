@@ -877,7 +877,11 @@ fn assign_coordinates_rust(
                 let h_vis = std::cmp::max(label_h + 2, min_node_h);
                 // For LR/RL: swap width and height in TD layout space so that after
                 // transposing the coordinates, nodes appear with the correct aspect ratio.
-                if is_lr_or_rl { (h_vis, w_vis) } else { (w_vis, h_vis) }
+                if is_lr_or_rl {
+                    (h_vis, w_vis)
+                } else {
+                    (w_vis, h_vis)
+                }
             };
             if h > layer_max_h {
                 layer_max_h = h;
@@ -1536,12 +1540,24 @@ fn collapse_subgraphs(
             continue;
         }
         let nd = &g.digraph[idx];
-        graph::graph_add_node(&mut collapsed, &nd.id, &nd.label, &nd.shape, nd.subgraph.as_deref());
+        graph::graph_add_node(
+            &mut collapsed,
+            &nd.id,
+            &nd.label,
+            &nd.shape,
+            nd.subgraph.as_deref(),
+        );
     }
 
     // Add compound nodes
     for ci in &compounds {
-        graph::graph_add_node(&mut collapsed, &ci.compound_id, &ci.sg_name, "Rectangle", None);
+        graph::graph_add_node(
+            &mut collapsed,
+            &ci.compound_id,
+            &ci.sg_name,
+            "Rectangle",
+            None,
+        );
     }
 
     // Remap edges
@@ -1576,9 +1592,7 @@ fn collapse_subgraphs(
 }
 
 /// Compute width/height overrides for compound nodes.
-fn compute_compound_dimensions(
-    compounds: &[CompoundInfo],
-) -> HashMap<String, (i32, i32)> {
+fn compute_compound_dimensions(compounds: &[CompoundInfo]) -> HashMap<String, (i32, i32)> {
     let mut overrides = HashMap::new();
     for ci in compounds {
         let total_member_w: i32 = ci.member_widths.iter().sum();
@@ -1620,7 +1634,18 @@ fn expand_compound_nodes(
         let shape = graph::nll_get_shape(nodes.clone(), i);
         let layer = graph::nll_get_layer(nodes.clone(), i);
 
-        graph::nll_push(result.clone(), id.clone(), layer, i, x, y, w, h, label, shape);
+        graph::nll_push(
+            result.clone(),
+            id.clone(),
+            layer,
+            i,
+            x,
+            y,
+            w,
+            h,
+            label,
+            shape,
+        );
 
         if let Some(ci) = compound_map.get(&id) {
             let mut member_x = x + 1 + SG_PAD_X;
@@ -1778,11 +1803,7 @@ pub struct LayoutIR {
 
 /// Run the full layout pipeline (parse → graph → layout → route).
 /// Returns clean primitives: rects + edges.
-fn run_layout_pipeline(
-    parsed: &parser::Graph,
-    padding: usize,
-    direction: &str,
-) -> LayoutIR {
+fn run_layout_pipeline(parsed: &parser::Graph, padding: usize, direction: &str) -> LayoutIR {
     let g = ast_to_graph(parsed);
     let is_lr_or_rl = direction == "LR" || direction == "RL";
 
@@ -1796,7 +1817,8 @@ fn run_layout_pipeline(
         let (dag, reversed) = remove_cycles_rust(&collapsed);
         let layers = assign_layers_rust(&dag);
         let ordering = build_ordering(&dag, &layers);
-        let nodes = assign_coordinates_rust(&dag, &ordering, padding as i32, is_lr_or_rl, &dim_overrides);
+        let nodes =
+            assign_coordinates_rust(&dag, &ordering, padding as i32, is_lr_or_rl, &dim_overrides);
 
         let expanded = expand_compound_nodes(&nodes, &compounds);
         let routed = route_edges_rust(&collapsed, &expanded, &reversed);
@@ -1806,7 +1828,13 @@ fn run_layout_pipeline(
         let (dag, reversed) = remove_cycles_rust(&g);
         let layers = assign_layers_rust(&dag);
         let ordering = build_ordering(&dag, &layers);
-        let nodes = assign_coordinates_rust(&dag, &ordering, padding as i32, is_lr_or_rl, &empty_overrides);
+        let nodes = assign_coordinates_rust(
+            &dag,
+            &ordering,
+            padding as i32,
+            is_lr_or_rl,
+            &empty_overrides,
+        );
         let routed = route_edges_rust(&g, &nodes, &reversed);
         (nodes, routed, Vec::new())
     };
@@ -1834,7 +1862,14 @@ fn run_layout_pipeline(
         } else {
             graph::nll_get_shape(raw_nodes.clone(), i)
         };
-        rects.push(LayoutRect { x, y, w, h, label, shape });
+        rects.push(LayoutRect {
+            x,
+            y,
+            w,
+            h,
+            label,
+            shape,
+        });
     }
 
     let en = graph::erl_len(raw_edges.clone());

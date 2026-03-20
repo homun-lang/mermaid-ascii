@@ -3,7 +3,7 @@
 //! Each LayoutRect becomes an SVG shape, each LayoutEdge becomes a polyline.
 //! No layout logic here — just drawing.
 
-use crate::{LayoutIR, LayoutRect, LayoutEdge};
+use crate::{LayoutEdge, LayoutIR, LayoutRect};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 

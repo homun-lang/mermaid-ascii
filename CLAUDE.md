@@ -149,14 +149,6 @@ chmod +x ~/bin/homunc
 - Use `and`/`or`/`not` — NOT `&&`/`||`/`!` (these are lex errors)
 - `?` operator works for Result unwrapping
 
-## Known .hom Language Gaps
-
-1. `.hom codegen wraps all Var args in .clone()` — for Vec<T> mutations are lost. Use `Rc<RefCell<...>>` graph/ types.
-2. **Nested while loop counter shadowing** — `x := x + 1` generates shadow variable → infinite loop
-3. `||`, `&&`, `!` are lex errors — use `or`, `and`, `not`
-4. Functions from graph/*.rs are unknown to homunc's semantic checker — appear as warnings
-5. `str` in .hom = `String` in Rust
-
 ## Pipeline
 
 ```
@@ -174,8 +166,6 @@ Mermaid DSL text
 |------|------|
 | `src/lib.rs` | **MAIN FILE** — entire pipeline: parser, layout, routing, rendering |
 | `src/graph/graph.rs` | petgraph DiGraph wrapper (hand-written Rust) |
-| `src/graph/layout_state.rs` | Rc<RefCell<...>> mutable state types |
-| `src/graph/path_state.rs` | Rc<RefCell<...>> types for A* |
 | `src/pathfinder.hom` | A* pathfinding (works — single-level loops + Rc types) |
 | `src/canvas.hom` | Canvas/CharSet/BoxChars type definitions + pure functions |
 | `src/main.rs` | CLI entry point (clap-based) |
