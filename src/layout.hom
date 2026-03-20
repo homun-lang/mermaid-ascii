@@ -149,7 +149,7 @@ greedy_fas_ordering := (g: Graph) -> StrList {
         si := 0
         while (si < sn) {
           sink  := str_list_get(sinks, si)
-          node_set_remove(active, sink)
+          active := node_set_remove(active, sink)
           str_list_push(s2, sink)
           // Update out-degree of predecessors still in active.
           preds := gw_predecessors(g, sink)
@@ -179,7 +179,7 @@ greedy_fas_ordering := (g: Graph) -> StrList {
         si := 0
         while (si < srn) {
           src   := str_list_get(sources, si)
-          node_set_remove(active, src)
+          active := node_set_remove(active, src)
           str_list_push(s1, src)
           // Update in-degree of successors still in active.
           succs := gw_successors(g, src)
@@ -201,7 +201,7 @@ greedy_fas_ordering := (g: Graph) -> StrList {
     // the highest (out-degree − in-degree) score and add it to s1.
     if (node_set_len(active) > 0) {
       best  := fas_best_node(active, out_deg, in_deg)
-      node_set_remove(active, best)
+      active := node_set_remove(active, best)
       str_list_push(s1, best)
       // Update degrees of neighbours still in active.
       succs := gw_successors(g, best)

@@ -26,9 +26,9 @@
 //     deg_map_max(dm)          -> i32   (max value; 0 if empty)
 //     deg_map_copy(dm)         -> DegMap  (identity; hom's .clone() already deep-copies)
 //
-//   NodeSet     = Rc<RefCell<HashSet<String>>>
+//   NodeSet     = plain struct { inner: HashSet<String> } (Clone)
 //     node_set_from_str_list(sl) -> NodeSet
-//     node_set_remove(ns, id)
+//     node_set_remove(ns, id)    -> NodeSet   (returns modified copy)
 //     node_set_contains(ns, id)  -> bool
 //     node_set_len(ns)            -> i32
 //
@@ -164,26 +164,32 @@ pub fn deg_map_copy(dm: DegMap) -> DegMap {
 
 // ── NodeSet ───────────────────────────────────────────────────────────────────
 
-pub type NodeSet = std::rc::Rc<std::cell::RefCell<HashSet<String>>>;
+#[derive(Clone, Debug, PartialEq)]
+pub struct NodeSet {
+    pub inner: HashSet<String>,
+}
 
 /// Build a NodeSet pre-populated from all elements of a StrList.
 pub fn node_set_from_str_list(
     sl: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
 ) -> NodeSet {
     let set: HashSet<String> = sl.borrow().iter().cloned().collect();
-    std::rc::Rc::new(std::cell::RefCell::new(set))
+    NodeSet { inner: set }
 }
 
-pub fn node_set_remove(ns: NodeSet, id: String) {
-    ns.borrow_mut().remove(&id);
+/// Remove `id` from the set and return the modified NodeSet.
+/// Use as: `active = node_set_remove(active, id)` in generated Rust.
+pub fn node_set_remove(mut ns: NodeSet, id: String) -> NodeSet {
+    ns.inner.remove(&id);
+    ns
 }
 
 pub fn node_set_contains(ns: NodeSet, id: String) -> bool {
-    ns.borrow().contains(&id)
+    ns.inner.contains(&id)
 }
 
 pub fn node_set_len(ns: NodeSet) -> i32 {
-    ns.borrow().len() as i32
+    ns.inner.len() as i32
 }
 
 // ── StrList ───────────────────────────────────────────────────────────────────
@@ -393,8 +399,7 @@ pub fn gw_edges_full(g: Graph) -> EdgeInfoList {
 
 /// Return a StrList of all nodes in `active` whose out-degree is 0.
 pub fn fas_sinks(active: NodeSet, out_deg: DegMap) -> StrList {
-    let active_ref = active.borrow();
-    let sinks: Vec<String> = active_ref
+    let sinks: Vec<String> = active.inner
         .iter()
         .filter(|id| *out_deg.inner.get(*id).unwrap_or(&0) == 0)
         .cloned()
@@ -404,8 +409,7 @@ pub fn fas_sinks(active: NodeSet, out_deg: DegMap) -> StrList {
 
 /// Return a StrList of all nodes in `active` whose in-degree is 0.
 pub fn fas_sources(active: NodeSet, in_deg: DegMap) -> StrList {
-    let active_ref = active.borrow();
-    let sources: Vec<String> = active_ref
+    let sources: Vec<String> = active.inner
         .iter()
         .filter(|id| *in_deg.inner.get(*id).unwrap_or(&0) == 0)
         .cloned()
@@ -416,10 +420,9 @@ pub fn fas_sources(active: NodeSet, in_deg: DegMap) -> StrList {
 /// Return the node in `active` with the highest (out_deg − in_deg) score.
 /// Returns "" if active is empty.
 pub fn fas_best_node(active: NodeSet, out_deg: DegMap, in_deg: DegMap) -> String {
-    let active_ref = active.borrow();
     let mut best_id = String::new();
     let mut best_score = i32::MIN;
-    for node_id in active_ref.iter() {
+    for node_id in active.inner.iter() {
         let score = out_deg.inner.get(node_id).copied().unwrap_or(0)
             - in_deg.inner.get(node_id).copied().unwrap_or(0);
         if best_id.is_empty() || score > best_score {
