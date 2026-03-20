@@ -1617,45 +1617,12 @@ pub fn render_dsl(
     };
     let direction = _direction.unwrap_or(parsed_direction);
 
-    // Phase 1: Build graph
-    let g = ast_to_graph(&parsed);
-    let is_lr_or_rl = direction == "LR" || direction == "RL";
+    let ir = run_layout_pipeline(&parsed, padding, direction);
+    let nodes = ir.nodes;
+    let routed = ir.routed;
+    let compounds = ir.compounds;
 
-    // Check for subgraphs
-    let subgraph_members = collect_subgraph_members(&parsed);
-    let has_subgraphs = !subgraph_members.is_empty();
-
-    let (nodes, routed, compounds) = if has_subgraphs {
-        // Collapse subgraphs into compound nodes
-        let (collapsed, compounds) = collapse_subgraphs(&g, &subgraph_members, padding as i32);
-        let dim_overrides = compute_compound_dimensions(&compounds);
-
-        let (dag, reversed) = remove_cycles_rust(&collapsed);
-        let layers = assign_layers_rust(&dag);
-        let ordering = build_ordering(&dag, &layers);
-        let nodes = assign_coordinates_rust(&dag, &ordering, padding as i32, is_lr_or_rl, &dim_overrides);
-
-        // Expand compound nodes to place members inside
-        let expanded = expand_compound_nodes(&nodes, &compounds);
-        let routed = route_edges_rust(&collapsed, &expanded, &reversed);
-        (expanded, routed, compounds)
-    } else {
-        let empty_overrides = HashMap::new();
-        let (dag, reversed) = remove_cycles_rust(&g);
-        let layers = assign_layers_rust(&dag);
-        let ordering = build_ordering(&dag, &layers);
-        let nodes = assign_coordinates_rust(&dag, &ordering, padding as i32, is_lr_or_rl, &empty_overrides);
-        let routed = route_edges_rust(&g, &nodes, &reversed);
-        (nodes, routed, Vec::new())
-    };
-
-    // Transpose node positions and waypoints for LR/RL so the TD layout maps
-    // to a horizontal visual arrangement.
-    if is_lr_or_rl {
-        transpose_layout(&nodes, &routed);
-    }
-
-    // Phase 7: Render to canvas
+    // Render to canvas
     let cs = if unicode {
         canvas::CharSet::Unicode
     } else {
@@ -1774,6 +1741,116 @@ pub fn render_dsl(
     Ok(rendered)
 }
 
+/// Shared layout result used by both ASCII and SVG renderers.
+/// A positioned rectangle — node or container.
+#[derive(Clone, Debug)]
+pub struct LayoutRect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    pub label: String,
+    /// "Rectangle", "Rounded", "Diamond", "Circle", "Container"
+    pub shape: String,
+}
+
+/// A routed edge with waypoints.
+#[derive(Clone, Debug)]
+pub struct LayoutEdge {
+    pub waypoints: Vec<(i32, i32)>,
+    pub edge_type: String,
+    pub label: String,
+}
+
+/// Flat, primitive layout IR — no compound node hacks.
+/// Both ASCII and SVG renderers consume this directly.
+pub struct LayoutIR {
+    pub rects: Vec<LayoutRect>,
+    pub edges: Vec<LayoutEdge>,
+}
+
+/// Run the full layout pipeline (parse → graph → layout → route).
+/// Returns clean primitives: rects + edges.
+fn run_layout_pipeline(
+    parsed: &parser::Graph,
+    padding: usize,
+    direction: &str,
+) -> LayoutIR {
+    let g = ast_to_graph(parsed);
+    let is_lr_or_rl = direction == "LR" || direction == "RL";
+
+    let subgraph_members = collect_subgraph_members(parsed);
+    let has_subgraphs = !subgraph_members.is_empty();
+
+    let (raw_nodes, raw_edges, compounds) = if has_subgraphs {
+        let (collapsed, compounds) = collapse_subgraphs(&g, &subgraph_members, padding as i32);
+        let dim_overrides = compute_compound_dimensions(&compounds);
+
+        let (dag, reversed) = remove_cycles_rust(&collapsed);
+        let layers = assign_layers_rust(&dag);
+        let ordering = build_ordering(&dag, &layers);
+        let nodes = assign_coordinates_rust(&dag, &ordering, padding as i32, is_lr_or_rl, &dim_overrides);
+
+        let expanded = expand_compound_nodes(&nodes, &compounds);
+        let routed = route_edges_rust(&collapsed, &expanded, &reversed);
+        (expanded, routed, compounds)
+    } else {
+        let empty_overrides = HashMap::new();
+        let (dag, reversed) = remove_cycles_rust(&g);
+        let layers = assign_layers_rust(&dag);
+        let ordering = build_ordering(&dag, &layers);
+        let nodes = assign_coordinates_rust(&dag, &ordering, padding as i32, is_lr_or_rl, &empty_overrides);
+        let routed = route_edges_rust(&g, &nodes, &reversed);
+        (nodes, routed, Vec::new())
+    };
+
+    if is_lr_or_rl {
+        transpose_layout(&raw_nodes, &raw_edges);
+    }
+
+    // Convert to flat primitives
+    let compound_ids: HashSet<String> = compounds.iter().map(|c| c.compound_id.clone()).collect();
+    let mut rects = Vec::new();
+    let nn = graph::nll_len(raw_nodes.clone());
+    for i in 0..nn {
+        let id = graph::nll_get_id(raw_nodes.clone(), i);
+        if id.starts_with("__dummy_") {
+            continue;
+        }
+        let x = graph::nll_get_x(raw_nodes.clone(), i);
+        let y = graph::nll_get_y(raw_nodes.clone(), i);
+        let w = graph::nll_get_width(raw_nodes.clone(), i);
+        let h = graph::nll_get_height(raw_nodes.clone(), i);
+        let label = graph::nll_get_label(raw_nodes.clone(), i);
+        let shape = if compound_ids.contains(&id) {
+            "Container".to_string()
+        } else {
+            graph::nll_get_shape(raw_nodes.clone(), i)
+        };
+        rects.push(LayoutRect { x, y, w, h, label, shape });
+    }
+
+    let en = graph::erl_len(raw_edges.clone());
+    let mut edges = Vec::new();
+    for i in 0..en {
+        let wpc = graph::erl_get_waypoint_count(raw_edges.clone(), i);
+        let mut waypoints = Vec::new();
+        for j in 0..wpc {
+            waypoints.push((
+                graph::erl_get_waypoint_x(raw_edges.clone(), i, j),
+                graph::erl_get_waypoint_y(raw_edges.clone(), i, j),
+            ));
+        }
+        edges.push(LayoutEdge {
+            waypoints,
+            edge_type: graph::erl_get_etype(raw_edges.clone(), i),
+            label: graph::erl_get_label(raw_edges.clone(), i),
+        });
+    }
+
+    LayoutIR { rects, edges }
+}
+
 /// Render Mermaid DSL source to geometry-based SVG.
 ///
 /// Runs the full layout pipeline then calls `svg_renderer::render()`.
@@ -1783,7 +1860,6 @@ pub fn render_svg_dsl(
     padding: usize,
     _direction: Option<&str>,
 ) -> Result<String, String> {
-    // Phase 0: Parse
     let parsed = rust_parser::parse_flowchart(src);
     if parsed.nodes.is_empty() && parsed.edges.is_empty() && parsed.subgraphs.is_empty() {
         return Ok(String::new());
@@ -1797,49 +1873,13 @@ pub fn render_svg_dsl(
     };
     let direction = _direction.unwrap_or(parsed_direction);
 
-    // Phase 1: Build graph
-    let g = ast_to_graph(&parsed);
-
-    // Phase 2: Remove cycles + assign layers
-    let (dag, reversed) = remove_cycles_rust(&g);
-    let layers = assign_layers_rust(&dag);
-
-    // Phase 3-4: Build layer ordering with crossing minimization
-    let ordering = build_ordering(&dag, &layers);
-
-    // Phase 5: Assign coordinates
-    let is_lr_or_rl = direction == "LR" || direction == "RL";
-    let empty_overrides = HashMap::new();
-    let nodes = assign_coordinates_rust(&dag, &ordering, padding as i32, is_lr_or_rl, &empty_overrides);
-
-    // Phase 6: Route edges
-    let routed = route_edges_rust(&g, &nodes, &reversed);
-
-    // Transpose node positions and waypoints for LR/RL
-    if is_lr_or_rl {
-        transpose_layout(&nodes, &routed);
-    }
-
-    // Collect subgraph member lists for SVG border rendering.
-    fn collect_sg(sg: &parser::Subgraph, out: &mut Vec<(String, Vec<String>)>) {
-        if !sg.name.is_empty() {
-            let ids: Vec<String> = sg.nodes.iter().map(|n| n.id.clone()).collect();
-            out.push((sg.name.clone(), ids));
-        }
-        for nested in &sg.subgraphs {
-            collect_sg(nested, out);
-        }
-    }
-    let mut subgraph_members: Vec<(String, Vec<String>)> = Vec::new();
-    for sg in &parsed.subgraphs {
-        collect_sg(sg, &mut subgraph_members);
-    }
+    let ir = run_layout_pipeline(&parsed, padding, direction);
 
     Ok(svg_renderer::render(
-        &nodes,
-        &routed,
+        &ir.nodes,
+        &ir.routed,
         direction,
-        &subgraph_members,
+        &ir.subgraph_members,
     ))
 }
 
