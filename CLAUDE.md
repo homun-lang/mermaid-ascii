@@ -134,7 +134,7 @@ See `.claude/skills/claude-bot/` for the full skill, example scripts, and planni
 
 Install the latest `homunc` from GitHub releases:
 ```bash
-wget -q https://github.com/HomunMage/Homun-Lang/releases/latest/download/homunc-linux-x86_64 -O ~/bin/homunc
+wget -q https://github.com/homun-lang/homun/releases/latest/download/homunc-linux-x86_64 -O ~/bin/homunc
 chmod +x ~/bin/homunc
 ```
 

@@ -105,8 +105,7 @@ fn find_homunc() -> PathBuf {
     }
     // Download from GitHub releases
     std::fs::create_dir_all(".tmp").unwrap();
-    let url =
-        "https://github.com/HomunMage/Homun-Lang/releases/latest/download/homunc-linux-x86_64";
+    let url = "https://github.com/homun-lang/homun/releases/latest/download/homunc-linux-x86_64";
     let status = Command::new("wget")
         .args(["-q", url, "-O", local.to_str().unwrap()])
         .status();

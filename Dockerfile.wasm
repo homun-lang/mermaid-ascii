@@ -16,7 +16,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
       arm64) HOMUNC_ARCH="aarch64" ;; \
       *) HOMUNC_ARCH="x86_64" ;; \
     esac && \
-    wget -q "https://github.com/HomunMage/Homun-Lang/releases/latest/download/homunc-linux-${HOMUNC_ARCH}" -O /usr/local/bin/homunc \
+    wget -q "https://github.com/homun-lang/homun/releases/latest/download/homunc-linux-${HOMUNC_ARCH}" -O /usr/local/bin/homunc \
     && chmod +x /usr/local/bin/homunc \
     || true
 # build.rs will use homunc from PATH to compile .hom → OUT_DIR/*.rs

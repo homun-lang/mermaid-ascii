@@ -1,4 +1,4 @@
-name: CI
+name: auto Test
 
 on:
   push:
@@ -31,7 +31,7 @@ jobs:
 
       - name: Download homunc
         run: |
-          wget -q https://github.com/HomunMage/Homun-Lang/releases/latest/download/homunc-linux-x86_64 -O /usr/local/bin/homunc
+          wget -q https://github.com/homun-lang/homun/releases/latest/download/homunc-linux-x86_64 -O /usr/local/bin/homunc
           chmod +x /usr/local/bin/homunc
         continue-on-error: true
 
@@ -69,7 +69,7 @@ jobs:
 
       - name: Download homunc
         run: |
-          wget -q https://github.com/HomunMage/Homun-Lang/releases/latest/download/homunc-linux-x86_64 -O /usr/local/bin/homunc
+          wget -q https://github.com/homun-lang/homun/releases/latest/download/homunc-linux-x86_64 -O /usr/local/bin/homunc
           chmod +x /usr/local/bin/homunc
         continue-on-error: true
 
