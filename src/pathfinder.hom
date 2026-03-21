@@ -98,7 +98,7 @@ a_star := (grid::OccupancyGrid, sx: int, sy: int, ex: int, ey: int) -> PointList
   cost_set(cost, start_key, 0)
   cost_set(prev, start_key, -2)
 
-  h := heap_new()
+  h ::= heap_new()
   heap_push(h, heuristic(sx, sy, ex, ey), key_to_str(start_key))
 
   done  := false
