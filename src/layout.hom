@@ -289,7 +289,7 @@ remove_cycles := (g: Graph) -> (Graph, EdgePairList) {
       nid := str_list_get(nodes, ni)
       lbl := gw_node_label(g, nid)
       shp := gw_node_shape(g, nid)
-      mgraph_add_node_full(new_g, nid, lbl, shp)
+      new_g := mgraph_add_node_full(new_g, nid, lbl, shp)
       ni := ni + 1
     }
 
@@ -303,9 +303,9 @@ remove_cycles := (g: Graph) -> (Graph, EdgePairList) {
       lbl   := edge_info_label(all_edges, ei2)
       if (src != tgt) {
         if (edge_pair_list_contains(reversed, src, tgt)) {
-          mgraph_add_edge_full(new_g, tgt, src, etype, lbl)
+          new_g := mgraph_add_edge_full(new_g, tgt, src, etype, lbl)
         } else {
-          mgraph_add_edge_full(new_g, src, tgt, etype, lbl)
+          new_g := mgraph_add_edge_full(new_g, src, tgt, etype, lbl)
         }
       }
       ei2 := ei2 + 1
@@ -458,7 +458,7 @@ insert_dummy_nodes := (dag: Graph, la: LayerAssignment) -> AugmentedGraph {
     nid := str_list_get(nodes, ni)
     lbl := gw_node_label(dag, nid)
     shp := gw_node_shape(dag, nid)
-    mgraph_add_node_full(mg, nid, lbl, shp)
+    mg := mgraph_add_node_full(mg, nid, lbl, shp)
     ni := ni + 1
   }
 
@@ -489,7 +489,7 @@ insert_dummy_nodes := (dag: Graph, la: LayerAssignment) -> AugmentedGraph {
 
     if (layer_diff <= 1) {
       // Single-layer span — copy edge directly; no dummy nodes needed.
-      mgraph_add_edge_full(mg, src_id, tgt_id, etype, lbl)
+      mg := mgraph_add_edge_full(mg, src_id, tgt_id, etype, lbl)
     } else {
       // Multi-layer span — insert a chain of dummy nodes.
       steps      := layer_diff - 1
@@ -505,14 +505,14 @@ insert_dummy_nodes := (dag: Graph, la: LayerAssignment) -> AugmentedGraph {
         dummy_id    := "__dummy__${this_edge}_${i}"
 
         // Add dummy node (empty label, Rectangle shape).
-        mgraph_add_node_full(mg, dummy_id, "", "Rectangle")
+        mg := mgraph_add_node_full(mg, dummy_id, "", "Rectangle")
         // Register dummy node's layer.
         layers := deg_map_set(layers, dummy_id, dummy_layer)
         // Record the dummy id for later phases.
         dummy_ids := str_list_push(dummy_ids, dummy_id)
 
         // Intermediate segment edge carries no label.
-        mgraph_add_edge_full(mg, chain_prev, dummy_id, etype, "")
+        mg := mgraph_add_edge_full(mg, chain_prev, dummy_id, etype, "")
         chain_prev := dummy_id
 
         i := i + 1
@@ -521,7 +521,7 @@ insert_dummy_nodes := (dag: Graph, la: LayerAssignment) -> AugmentedGraph {
       // Final segment: connect the last dummy (or src for 1-step chains) to
       // the original target.  The label travels on the last segment so that
       // the renderer can place it close to the arrowhead.
-      mgraph_add_edge_full(mg, chain_prev, tgt_id, etype, lbl)
+      mg := mgraph_add_edge_full(mg, chain_prev, tgt_id, etype, lbl)
 
       // Record this multi-layer edge replacement for Phase 4 (crossing min).
       dummy_edge_list_add(dummy_edges, src_id, tgt_id, dummy_ids, etype, lbl)

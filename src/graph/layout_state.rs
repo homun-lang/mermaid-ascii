@@ -59,10 +59,10 @@
 //     pos_map_from_str_list(ordering) -> PosMap
 //     pos_map_get(pm, id)        -> i32   (-1 if absent)
 //
-//   MutableGraph = Rc<RefCell<Graph>>
+//   MutableGraph = plain struct { inner: Graph }
 //     mgraph_new()               -> MutableGraph
-//     mgraph_add_node_full(mg, id, label, shape)
-//     mgraph_add_edge_full(mg, from, to, etype, label)  // label="" → None
+//     mgraph_add_node_full(mg, id, label, shape) -> MutableGraph
+//     mgraph_add_edge_full(mg, from, to, etype, label) -> MutableGraph  // label="" → None
 //     mgraph_build(mg)           -> Graph
 //
 //   Graph wrappers (accept Graph by value — matches .hom's .clone() convention)
@@ -305,38 +305,40 @@ pub fn pos_map_get(pm: PosMap, id: String) -> i32 {
 }
 
 // ── MutableGraph ──────────────────────────────────────────────────────────────
-// Wraps Graph in Rc<RefCell<...>> so .hom's clone-based calling convention
-// can mutate it without losing changes.
-//
-// Graph is defined in dep/graph.rs and is in scope when layout_state is
-// inlined via `use layout_state` inside a .hom module that also has `use graph`.
+// Plain struct wrapping Graph; mutating functions return the modified value so
+// .hom call sites can rebind (return-value mutation pattern).
 
-pub type MutableGraph = std::rc::Rc<std::cell::RefCell<Graph>>;
+#[derive(Clone)]
+pub struct MutableGraph {
+    pub inner: Graph,
+}
 
 pub fn mgraph_new() -> MutableGraph {
-    std::rc::Rc::new(std::cell::RefCell::new(graph_new()))
+    MutableGraph { inner: graph_new() }
 }
 
 /// Add a node to the mutable graph (no-op if already present).
-pub fn mgraph_add_node_full(mg: MutableGraph, id: String, label: String, shape: String) {
-    graph_add_node(&mut mg.borrow_mut(), &id, &label, &shape, None);
+pub fn mgraph_add_node_full(mut mg: MutableGraph, id: String, label: String, shape: String) -> MutableGraph {
+    graph_add_node(&mut mg.inner, &id, &label, &shape, None);
+    mg
 }
 
 /// Add an edge to the mutable graph; label="" means no label.
 pub fn mgraph_add_edge_full(
-    mg: MutableGraph,
+    mut mg: MutableGraph,
     from: String,
     to: String,
     etype: String,
     label: String,
-) {
+) -> MutableGraph {
     let label_opt: Option<&str> = if label.is_empty() { None } else { Some(&label) };
-    graph_add_edge(&mut mg.borrow_mut(), &from, &to, &etype, label_opt);
+    graph_add_edge(&mut mg.inner, &from, &to, &etype, label_opt);
+    mg
 }
 
-/// Extract the final Graph from a MutableGraph (clones the inner value).
+/// Extract the final Graph from a MutableGraph.
 pub fn mgraph_build(mg: MutableGraph) -> Graph {
-    mg.borrow().clone()
+    mg.inner
 }
 
 // ── Graph wrappers (value-based) ─────────────────────────────────────────────
