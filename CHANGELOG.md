@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.17 — homunc v0.87 syntax upgrade
+
+- Fix runtime deduplication in `build.rs`: key by function name (not full signature) so new `chars` module predicates (`is_alpha`, `is_digit`, `is_alnum`, `is_upper`) don't duplicate old stdlib versions
+- Strip `#[cfg(test)] mod tests_*` blocks from generated `.hom` module files so companion `.rs` tests (grid_data, path_state) run once via the `graph` module, not twice with broken scope
+- Add `clippy::unnecessary_mut_passed` allow to `lib.rs` for v0.87 `heap_is_empty(&Heap)` codegen pattern
+- Requires homunc v0.87.0+
+
 ## v0.16 — Embedded Runtime + Examples
 
 - Use `homunc --emit-runtime` instead of `src/hom` submodule — runtime is now embedded in the compiler

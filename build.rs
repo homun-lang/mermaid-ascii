@@ -102,10 +102,18 @@ fn generate_runtime(homunc: &PathBuf) {
             }
         }
 
-        // Deduplicate `pub fn` definitions
+        // Deduplicate `pub fn` definitions by function name (not full signature).
+        // v0.87 runtime emits two versions of is_alpha/is_digit/is_alnum/is_upper:
+        // the old AsRef<str> form in std and the new String form in chars. Both
+        // must collapse to a single definition — keying on name achieves that.
         if trimmed.starts_with("pub fn ") {
-            let sig = trimmed.split('{').next().unwrap_or(trimmed).trim();
-            if !seen_fns.insert(sig.to_string()) {
+            let fn_name = trimmed
+                .trim_start_matches("pub fn ")
+                .split(['(', '<', ' '])
+                .next()
+                .unwrap_or("")
+                .to_string();
+            if !seen_fns.insert(fn_name) {
                 // Strip preceding doc comments that were buffered
                 while code.ends_with('\n') {
                     let last_line_start = code[..code.len() - 1].rfind('\n').map_or(0, |i| i + 1);
@@ -201,6 +209,15 @@ fn compile_hom_files(homunc: &PathBuf) {
                     .status();
                 match status {
                     Ok(s) if s.success() => {
+                        // Strip #[cfg(test)] mod tests_* blocks from generated files.
+                        // homunc inlines .rs companion files but drops `use super::*;`,
+                        // so embedded test sub-modules fail when the file is include!()-d
+                        // inside a parent mod.  The same tests run correctly via
+                        // `pub mod graph;` where super::* resolves properly.
+                        if let Ok(content) = std::fs::read_to_string(&rs_path) {
+                            let cleaned = strip_test_modules(&content);
+                            let _ = std::fs::write(&rs_path, cleaned);
+                        }
                         println!(
                             "cargo:warning=Compiled {} -> {}",
                             path.display(),

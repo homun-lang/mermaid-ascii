@@ -35,7 +35,8 @@
     clippy::almost_swapped,
     clippy::needless_borrow,
     clippy::op_ref,
-    clippy::iter_overeager_cloned
+    clippy::iter_overeager_cloned,
+    clippy::unnecessary_mut_passed
 )]
 
 #[cfg(feature = "wasm")]
