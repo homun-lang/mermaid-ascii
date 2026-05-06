@@ -1,8 +1,4 @@
 #!/bin/sh
-if ! command -v cargo >/dev/null 2>&1; then
-    echo "Skipping cargo fmt check: cargo not installed."
-    exit 0
-fi
 cargo fmt -- --check
 if [ $? -ne 0 ]; then
     echo "Error: cargo fmt check failed. Run 'cargo fmt' and try again."
