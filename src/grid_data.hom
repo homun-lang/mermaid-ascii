@@ -1,0 +1,29 @@
+// grid_data.hom — Flat boolean grid for A* pathfinding.
+//
+// The grid is stored row-major: index = row * width + col.
+// Functions take the grid as a `::` (mutable reference) parameter so callers
+// avoid clones; pathfinder.hom owns the grid via OccupancyGrid.
+
+use std
+
+// Create a new grid of size (width × height) with all cells `false` (free).
+grid_data_new := (width: int, height: int) -> @[bool] {
+  d := @[]
+  n := max(0, width * height)
+  for _ in range(n) {
+    push(d, false)
+  }
+  d
+}
+
+// Set the cell at (col, row) to `val`.
+grid_data_set := (d::@[bool], row: int, col: int, width: int, val: bool) -> _ {
+  idx := row * width + col
+  d[idx] := val
+}
+
+// Get the value of the cell at (col, row).
+grid_data_get := (d::@[bool], row: int, col: int, width: int) -> bool {
+  idx := row * width + col
+  d[idx]
+}

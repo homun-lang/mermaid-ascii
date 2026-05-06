@@ -19,7 +19,7 @@ use heap
 OccupancyGrid := struct {
   width:  int,
   height: int,
-  data:   GridData
+  data:   @[bool]
 }
 
 grid_new := (width: int, height: int) -> OccupancyGrid {
