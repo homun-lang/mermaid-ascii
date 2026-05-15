@@ -104,6 +104,20 @@ v_gap        := 3
 node_height  := 3
 
 
+// Linear scan for a (src, tgt) pair in a list of edge pairs.
+contains_pair := (lst: @[(str, str)], src: str, tgt: str) -> bool {
+  found := false
+  i := 0
+  n := len(lst)
+  while (i < n and not found) {
+    s, t := lst[i]
+    if (s == src and t == tgt) { found := true }
+    i := i + 1
+  }
+  found
+}
+
+
 // ── greedy_fas_ordering ────────────────────────────────────────────────────────
 // Compute a linear node ordering using the greedy Feedback Arc Set heuristic.
 //
@@ -251,16 +265,12 @@ greedy_fas_ordering := (g: Graph) -> StrList {
 //   reversed_edges — EdgePairList of (original_src, original_tgt) pairs
 //                    that were reversed during cycle removal
 
-remove_cycles := (g: Graph) -> (Graph, EdgePairList) {
-  if (gw_node_count(g) == 0) {
-    // Empty graph: return an empty copy with no reversed edges.
-    empty_ep := edge_pair_list_new()
-    dag_copy := gw_copy(g)
-    (dag_copy, empty_ep)
-  } else {
+remove_cycles := (g: Graph) -> (Graph, @[(str, str)]) {
+  reversed ::= @[]
+  dag := gw_copy(g)
+  if (gw_node_count(g) > 0) {
     ordering := greedy_fas_ordering(g)
     pos      := pos_map_from_str_list(ordering)
-    reversed := edge_pair_list_new()
 
     // Scan all edges to identify which ones are back-edges.
     all_edges := gw_edges_full(g)
@@ -273,7 +283,7 @@ remove_cycles := (g: Graph) -> (Graph, EdgePairList) {
       tgt_pos := pos_map_get(pos, tgt)
       is_self := src == tgt
       if (is_self or src_pos > tgt_pos) {
-        reversed := edge_pair_list_add(reversed, src, tgt)
+        push(reversed, (src, tgt))
       }
       ei := ei + 1
     }
@@ -302,7 +312,7 @@ remove_cycles := (g: Graph) -> (Graph, EdgePairList) {
       etype := edge_info_etype(all_edges, ei2)
       lbl   := edge_info_label(all_edges, ei2)
       if (src != tgt) {
-        if (edge_pair_list_contains(reversed, src, tgt)) {
+        if (contains_pair(reversed, src, tgt)) {
           new_g := mgraph_add_edge_full(new_g, tgt, src, etype, lbl)
         } else {
           new_g := mgraph_add_edge_full(new_g, src, tgt, etype, lbl)
@@ -312,8 +322,8 @@ remove_cycles := (g: Graph) -> (Graph, EdgePairList) {
     }
 
     dag := mgraph_build(new_g)
-    (dag, reversed)
   }
+  (dag, reversed)
 }
 
 
@@ -331,7 +341,7 @@ remove_cycles := (g: Graph) -> (Graph, EdgePairList) {
 LayerAssignment := struct {
   layers:         DegMap,
   layer_count:    int,
-  reversed_edges: EdgePairList
+  reversed_edges: @[(str, str)]
 }
 
 

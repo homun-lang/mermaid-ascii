@@ -221,38 +221,6 @@ pub fn str_list_extend_reversed(mut dst: StrList, src: StrList) -> StrList {
     dst
 }
 
-// ── EdgePairList ──────────────────────────────────────────────────────────────
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct EdgePairList {
-    pub inner: Vec<(String, String)>,
-}
-
-pub fn edge_pair_list_new() -> EdgePairList {
-    EdgePairList { inner: Vec::new() }
-}
-
-pub fn edge_pair_list_add(mut epl: EdgePairList, src: String, tgt: String) -> EdgePairList {
-    epl.inner.push((src, tgt));
-    epl
-}
-
-pub fn edge_pair_list_contains(epl: EdgePairList, src: String, tgt: String) -> bool {
-    epl.inner.contains(&(src, tgt))
-}
-
-pub fn edge_pair_list_len(epl: EdgePairList) -> i32 {
-    epl.inner.len() as i32
-}
-
-pub fn edge_pair_list_get_src(epl: EdgePairList, idx: i32) -> String {
-    epl.inner[idx as usize].0.clone()
-}
-
-pub fn edge_pair_list_get_tgt(epl: EdgePairList, idx: i32) -> String {
-    epl.inner[idx as usize].1.clone()
-}
-
 // ── EdgeInfoList ──────────────────────────────────────────────────────────────
 // Stores (from_id, to_id, edge_type, label) tuples.
 // label == "" means no label (the original EdgeData.label was None).
