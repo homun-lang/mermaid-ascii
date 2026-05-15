@@ -56,6 +56,9 @@ pub mod graph;
 // SVG renderer — geometry-based SVG output (hand-written Rust)
 pub mod svg_renderer;
 
+#[cfg(test)]
+mod tests;
+
 // Generated .hom modules live in OUT_DIR.
 mod types {
     use crate::runtime::*;

@@ -37,12 +37,10 @@ OccupancyGrid := struct {
 }
 
 grid_new := (width: int, height: int) -> OccupancyGrid {
-  d ::= @[]
-  for _ in range(width * height) { push(d, false) }
   OccupancyGrid {
     width:  width,
     height: height,
-    data:   d
+    data:   grid_data_new(width, height)
   }
 }
 
