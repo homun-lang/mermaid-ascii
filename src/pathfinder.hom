@@ -4,13 +4,28 @@
 // Rc<RefCell<...>> wrappers.  All Vec operations use .hom builtins
 // (push, len, indexing) so the codegen correctly handles &mut.
 //
-// Dependencies:
-//   dep/path_state.rs  — cost_data_new, pos encoding, PointList = Vec<(i32,i32)>
-//   runtime/heap.rs    — min-heap priority queue
+// Dependencies: heap (min-heap priority queue).
 
 use std
 use graph
 use heap
+
+
+// ── Position encoding ────────────────────────────────────────────────────────
+
+pos_to_key := (x: int, y: int, width: int) -> int { y * width + x }
+
+key_to_x := (key: int, width: int) -> int {
+  if (width <= 0) { 0 } else { key % width }
+}
+
+key_to_y := (key: int, width: int) -> int {
+  if (width <= 0) { 0 } else { key / width }
+}
+
+key_to_str := (key: int) -> str { "${key}" }
+
+str_to_key := (s: str) -> int { parse_int(trim(s)) }
 
 
 // ── OccupancyGrid ─────────────────────────────────────────────────────────────
@@ -57,7 +72,13 @@ grid_is_free := (grid::OccupancyGrid, x: int, y: int) -> bool {
 }
 
 // ── cost array helpers (pure .hom) ──────────────────────────────────────────
-// Wraps bounds-checked access to Vec<i32> cost/predecessor arrays.
+// Bounds-checked access to Vec<i32> cost/predecessor arrays.
+
+cost_data_new := (size: int) -> @[int] {
+  d ::= @[]
+  for _ in range(size) { push(d, -1) }
+  d
+}
 
 cost_set := (d::@[int], idx: int, val: int) -> _ {
   if (idx >= 0 and idx < len(d)) {
@@ -87,7 +108,7 @@ heuristic := (ax: int, ay: int, bx: int, by: int) -> int {
 
 // ── a_star ────────────────────────────────────────────────────────────────────
 
-a_star := (grid::OccupancyGrid, sx: int, sy: int, ex: int, ey: int) -> PointList {
+a_star := (grid::OccupancyGrid, sx: int, sy: int, ex: int, ey: int) -> @[(int, int)] {
   gw := grid.width
   gh := grid.height
 
@@ -144,10 +165,9 @@ a_star := (grid::OccupancyGrid, sx: int, sy: int, ex: int, ey: int) -> PointList
     }
   }
 
-  if (found == false) {
-    point_list_new()
-  } else {
-    // Reconstruct path backwards, then reverse in-place.
+  result ::= @[]
+  if (found) {
+    // Reconstruct path backwards, then reverse into result.
     pd ::= @[]
     cx    := ex
     cy    := ey
@@ -163,20 +183,18 @@ a_star := (grid::OccupancyGrid, sx: int, sy: int, ex: int, ey: int) -> PointList
         cy := key_to_y(par, gw)
       }
     }
-    // Reverse: build a new list from end to start
-    rev ::= @[]
     ri := len(pd) - 1
     while (ri >= 0) {
-      push(rev, pd[ri])
+      push(result, pd[ri])
       ri := ri - 1
     }
-    rev
   }
+  result
 }
 
 // ── simplify_path ─────────────────────────────────────────────────────────────
 
-simplify_path := (path::PointList) -> PointList {
+simplify_path := (path::@[(int, int)]) -> @[(int, int)] {
   n := len(path)
   if (n <= 2) {
     result ::= @[]

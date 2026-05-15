@@ -845,7 +845,7 @@ pub fn erl_push(
     to_id: String,
     label: String,
     edge_type: String,
-    waypoints: PointList,
+    waypoints: Vec<(i32, i32)>,
 ) {
     el.borrow_mut().push(EdgeRouteInfo {
         from_id,
