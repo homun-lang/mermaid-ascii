@@ -664,10 +664,10 @@ assign_coordinates := (ordering: OrderingList, aug: AugmentedGraph, padding: int
   c_node_height := 3
 
   // ── Build per-layer max heights and node dimensions ───────────────────────
-  layer_max_h := int_list_new()
+  layer_max_h ::= @[]
   li := 0
   while (li < lc) {
-    layer_max_h := int_list_push(layer_max_h, c_node_height)
+    push(layer_max_h, c_node_height)
     li := li + 1
   }
 
@@ -688,8 +688,8 @@ assign_coordinates := (ordering: OrderingList, aug: AugmentedGraph, padding: int
         lines := split(lbl, "\n")
         line_count := len(lines)
         nh := 2 + line_count
-        if (nh > int_list_get(layer_max_h, li)) {
-          layer_max_h := int_list_set(layer_max_h, li, nh)
+        if (nh > layer_max_h[li]) {
+          layer_max_h[li] := nh
         }
       }
       lj := lj + 1
@@ -698,17 +698,17 @@ assign_coordinates := (ordering: OrderingList, aug: AugmentedGraph, padding: int
   }
 
   // Cumulative Y positions
-  layer_y := int_list_new()
+  layer_y ::= @[]
   cy := 0
   li := 0
   while (li < lc) {
-    layer_y := int_list_push(layer_y, cy)
-    cy := cy + int_list_get(layer_max_h, li) + c_v_gap
+    push(layer_y, cy)
+    cy := cy + layer_max_h[li] + c_v_gap
     li := li + 1
   }
 
   // ── Compute per-layer total widths ────────────────────────────────────────
-  layer_total_w := int_list_new()
+  layer_total_w ::= @[]
   li := 0
   while (li < lc) {
     layer := ordering_get_layer(ordering, li)
@@ -738,7 +738,7 @@ assign_coordinates := (ordering: OrderingList, aug: AugmentedGraph, padding: int
     if (ln > 1) {
       gaps := (ln - 1) * c_h_gap
     }
-    layer_total_w := int_list_push(layer_total_w, w_sum + gaps)
+    push(layer_total_w, w_sum + gaps)
     li := li + 1
   }
 
@@ -746,7 +746,7 @@ assign_coordinates := (ordering: OrderingList, aug: AugmentedGraph, padding: int
   max_layer_w := 0
   li := 0
   while (li < lc) {
-    tw := int_list_get(layer_total_w, li)
+    tw := layer_total_w[li]
     if (tw > max_layer_w) {
       max_layer_w := tw
     }
@@ -760,7 +760,7 @@ assign_coordinates := (ordering: OrderingList, aug: AugmentedGraph, padding: int
   while (li < lc) {
     layer := ordering_get_layer(ordering, li)
     ln := str_list_len(layer)
-    tw := int_list_get(layer_total_w, li)
+    tw := layer_total_w[li]
     offset := center_col - tw / 2
     if (offset < 0) {
       offset := 0
@@ -787,7 +787,7 @@ assign_coordinates := (ordering: OrderingList, aug: AugmentedGraph, padding: int
         nw := max_line_w + 2 + 2 * padding
         nh := 2 + line_count
       }
-      nll_push(nodes, nid, li, lj, x, int_list_get(layer_y, li), nw, nh, lbl, shp)
+      nll_push(nodes, nid, li, lj, x, layer_y[li], nw, nh, lbl, shp)
       x := x + nw + c_h_gap
       lj := lj + 1
     }

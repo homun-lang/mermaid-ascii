@@ -888,34 +888,6 @@ pub fn erl_get_waypoint_y(el: EdgeRouteList, edge_idx: i32, wp_idx: i32) -> i32 
     el.borrow()[edge_idx as usize].waypoints[wp_idx as usize].1
 }
 
-// ── IntList ─────────────────────────────────────────────────────────────────
-// Plain Vec<i32> wrapper for Phase 5 layer height/width arrays.
-
-#[derive(Clone)]
-pub struct IntList { pub inner: Vec<i32> }
-
-pub fn int_list_new() -> IntList {
-    IntList { inner: Vec::new() }
-}
-
-pub fn int_list_push(mut il: IntList, val: i32) -> IntList {
-    il.inner.push(val);
-    il
-}
-
-pub fn int_list_len(il: IntList) -> i32 {
-    il.inner.len() as i32
-}
-
-pub fn int_list_get(il: IntList, idx: i32) -> i32 {
-    il.inner[idx as usize]
-}
-
-pub fn int_list_set(mut il: IntList, idx: i32, val: i32) -> IntList {
-    il.inner[idx as usize] = val;
-    il
-}
-
 /// Check if string starts with prefix
 pub fn str_starts_with(s: String, prefix: String) -> bool {
     s.starts_with(&prefix)
