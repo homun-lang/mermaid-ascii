@@ -88,3 +88,221 @@ paint_node := (c::Canvas, cs: CharSet, n: LayoutNode, shape: NodeShape, label: s
     }
   }
 }
+
+// ASCII renderer stage 2: paint a routed edge (line + arrowheads + exit stub + label).
+//
+// A RoutedEdge carries an orthogonal polyline of waypoints (pathfinder.hom). The
+// first waypoint sits on the SOURCE box border, the last on the TARGET box border
+// (route_edges contract). We draw line glyphs along the path (solid/dotted/thick),
+// a box-corner glyph at each bend, a T-junction "stub" where the path leaves a real
+// source box, and an arrowhead one cell shy of a real target box (the border itself
+// is left intact). Dummy endpoints are 1x1 bend points (insert_dummies), so a path
+// touching one is a straight pass-through — no stub, no arrowhead, no border skip.
+//
+// EdgeType decides which ends carry an arrowhead: *Arrow types point at the target,
+// BidirArrow at both. Cycle removal may REVERSE an edge for layering (reversed=true);
+// the geometry then flows source->target opposite to the drawn arrow, so we flip the
+// head onto the source end to restore the original direction.
+
+// Sign of `a`: -1, 0, or +1. Used to step along an axis-aligned segment.
+sign_i := (a: int) -> int {
+  if (a > 0) { => 1 }
+  if (a < 0) { => 0 - 1 }
+  0
+}
+
+edge_is_dotted := (et: EdgeType) -> bool {
+  et == EdgeType.DottedArrow or et == EdgeType.DottedLine
+}
+
+edge_is_thick := (et: EdgeType) -> bool {
+  et == EdgeType.ThickArrow or et == EdgeType.ThickLine
+}
+
+// True if the edge type draws an arrowhead at all (one or both ends).
+edge_has_arrow := (et: EdgeType) -> bool {
+  et == EdgeType.Arrow or et == EdgeType.DottedArrow or et == EdgeType.ThickArrow or et == EdgeType.BidirArrow
+}
+
+edge_is_bidir := (et: EdgeType) -> bool {
+  et == EdgeType.BidirArrow
+}
+
+// Vertical line glyph for an edge type. Dotted/thick fall back to ":"/"|" in ASCII
+// (the CharSet carries no dotted/thick variants, so we detect ASCII via cs.bx.h).
+edge_vchar := (cs: CharSet, et: EdgeType) -> str {
+  ascii := cs.bx.h == "-"
+  if (edge_is_dotted(et)) {
+    if (ascii) { => str(":") }
+    => str("╎")
+  }
+  if (edge_is_thick(et)) {
+    if (ascii) { => str("|") }
+    => str("║")
+  }
+  cs.bx.v
+}
+
+// Horizontal line glyph for an edge type (dotted/thick variants, ASCII fallback).
+edge_hchar := (cs: CharSet, et: EdgeType) -> str {
+  ascii := cs.bx.h == "-"
+  if (edge_is_dotted(et)) {
+    if (ascii) { => str(".") }
+    => str("╌")
+  }
+  if (edge_is_thick(et)) {
+    if (ascii) { => str("=") }
+    => str("═")
+  }
+  cs.bx.h
+}
+
+// Glyph for a path cell given the unit directions to its prev and next neighbours
+// (dx/dy each in {-1,0,1}). A straight run picks the line char; a bend picks the box
+// corner that connects the two neighbour directions.
+line_glyph := (cs: CharSet, et: EdgeType, pdx: int, pdy: int, ndx: int, ndy: int) -> str {
+  up := (pdx == 0 and pdy < 0) or (ndx == 0 and ndy < 0)
+  down := (pdx == 0 and pdy > 0) or (ndx == 0 and ndy > 0)
+  left := (pdx < 0 and pdy == 0) or (ndx < 0 and ndy == 0)
+  right := (pdx > 0 and pdy == 0) or (ndx > 0 and ndy == 0)
+  if (up and down) { => edge_vchar(cs, et) }
+  if (left and right) { => edge_hchar(cs, et) }
+  if (up and right) { => cs.bx.bl }
+  if (up and left) { => cs.bx.br }
+  if (down and right) { => cs.bx.tl }
+  if (down and left) { => cs.bx.tr }
+  edge_vchar(cs, et)
+}
+
+// Arrowhead glyph pointing in direction (dx,dy).
+arrow_glyph := (cs: CharSet, dx: int, dy: int) -> str {
+  if (dy > 0) { => cs.arrow_down }
+  if (dy < 0) { => cs.arrow_up }
+  if (dx > 0) { => cs.arrow_right }
+  cs.arrow_left
+}
+
+// T-junction "stub" on a source box border, stem pointing out in direction (dx,dy).
+stub_glyph := (cs: CharSet, dx: int, dy: int) -> str {
+  if (dy > 0) { => cs.bx.t_down }
+  if (dy < 0) { => cs.bx.t_up }
+  if (dx > 0) { => cs.bx.t_right }
+  cs.bx.t_left
+}
+
+// Expand an orthogonal waypoint polyline into the full inclusive list of unit grid
+// cells. Each segment is stepped one cell at a time; the shared segment endpoints
+// appear once (the first cell of a segment is the last cell of the previous one).
+expand_cells := (wpts: @[Point]) -> @[Point] {
+  out ::= @[]
+  if (len(wpts) > 0) {
+    push(out, wpts[0])
+    i ::= 0
+    while (i < len(wpts) - 1) {
+      bx := wpts[i + 1].x
+      by := wpts[i + 1].y
+      dx := sign_i(bx - wpts[i].x)
+      dy := sign_i(by - wpts[i].y)
+      cx ::= wpts[i].x
+      cy ::= wpts[i].y
+      while (cx != bx or cy != by) {
+        cx ::= cx + dx
+        cy ::= cy + dy
+        push(out, Point { x: cx, y: cy })
+      }
+      i ::= i + 1
+    }
+  }
+  out
+}
+
+// Paint a string left-to-right starting at (x,y).
+paint_text := (c::Canvas, x: int, y: int, s: str) -> _ {
+  i ::= 0
+  while (i < len(s)) {
+    cset(c, x + i, y, char_at(s, i))
+    i ::= i + 1
+  }
+}
+
+// Paint one routed edge: line glyphs along the path, bends as corners, an exit stub
+// on a real source border, arrowhead(s) just outside real target/source boxes, and
+// the edge label near the midpoint. See the header note for the reversal rule.
+paint_edge := (c::Canvas, cs: CharSet, e: RoutedEdge) -> _ {
+  cells := expand_cells(e.waypoints)
+  n := len(cells)
+  if (n >= 2) {
+    // Real boxes get stub/arrowhead/border-skip; dummy bend points are pass-throughs.
+    src_border := not is_dummy_id(e.from_id)
+    tgt_border := not is_dummy_id(e.to_id)
+
+    // Which ends carry an arrowhead (target by default; flip to source if reversed;
+    // both for bidirectional).
+    arrow_target ::= false
+    arrow_source ::= false
+    if (edge_is_bidir(e.edge_type)) {
+      arrow_target ::= true
+      arrow_source ::= true
+    } else {
+      if (edge_has_arrow(e.edge_type)) {
+        if (e.reversed) {
+          arrow_source ::= true
+        } else {
+          arrow_target ::= true
+        }
+      }
+    }
+
+    last := n - 1
+    i ::= 0
+    while (i < n) {
+      cx := cells[i].x
+      cy := cells[i].y
+      if (i == 0) {
+        // Source endpoint: stub on a real border, else a straight pass-through.
+        odx := sign_i(cells[1].x - cx)
+        ody := sign_i(cells[1].y - cy)
+        if (src_border) {
+          cset(c, cx, cy, stub_glyph(cs, odx, ody))
+        } else {
+          cset(c, cx, cy, line_glyph(cs, e.edge_type, 0 - odx, 0 - ody, odx, ody))
+        }
+      } else {
+        if (i == last) {
+          // Target endpoint: leave a real box border untouched; pass through a dummy.
+          if (not tgt_border) {
+            idx := sign_i(cx - cells[i - 1].x)
+            idy := sign_i(cy - cells[i - 1].y)
+            cset(c, cx, cy, line_glyph(cs, e.edge_type, 0 - idx, 0 - idy, idx, idy))
+          }
+        } else {
+          pdx := sign_i(cells[i - 1].x - cx)
+          pdy := sign_i(cells[i - 1].y - cy)
+          ndx := sign_i(cells[i + 1].x - cx)
+          ndy := sign_i(cells[i + 1].y - cy)
+          painted ::= false
+          if (i == 1 and src_border and arrow_source) {
+            // Head points back toward the source box (the prev cell).
+            cset(c, cx, cy, arrow_glyph(cs, pdx, pdy))
+            painted ::= true
+          }
+          if (i == last - 1 and tgt_border and arrow_target) {
+            // Head points into the target box (the next cell).
+            cset(c, cx, cy, arrow_glyph(cs, ndx, ndy))
+            painted ::= true
+          }
+          if (not painted) {
+            cset(c, cx, cy, line_glyph(cs, e.edge_type, pdx, pdy, ndx, ndy))
+          }
+        }
+      }
+      i ::= i + 1
+    }
+
+    // Edge label: painted just right of the path midpoint cell (beside the line).
+    if (len(e.label) > 0) {
+      mid := cells[n / 2]
+      paint_text(c, mid.x + 1, mid.y, e.label)
+    }
+  }
+}

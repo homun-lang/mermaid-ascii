@@ -601,3 +601,202 @@ fn paint_ascii_charset_rectangle() {
     );
     assert_eq!(canvas_to_string(c), "+-----+\n| Hi  |\n+-----+\n");
 }
+
+// --- ASCII renderer: edges + arrows + stubs + labels (task-28) ---
+
+// Right-trim every line. canvas_to_string's rtrim is byte/char inconsistent for rows
+// containing multibyte glyphs (a canvas.hom/runtime issue, not the edge painter), so
+// these tests normalize trailing whitespace to assert on glyph placement alone.
+fn rtrim_lines(s: String) -> String {
+    let mut out: String = s
+        .lines()
+        .map(|l| l.trim_end().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if s.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+// Paint two stacked 3x5 boxes (A over B, separated by 3 rows) plus one vertical edge
+// between them, reproducing a single column of edges.expect.txt. The edge runs from
+// A's bottom-border centre (2,2) straight down to B's top-border centre (2,6).
+fn paint_vertical_edge(et: mermaid_ascii::EdgeType, reversed: bool, label: &str) -> String {
+    use mermaid_ascii::{
+        LayoutNode, NodeShape, Point, RoutedEdge, canvas_new, canvas_to_string, charset_unicode,
+        paint_edge, paint_node,
+    };
+    let mk = |id: &str, y: i32| LayoutNode {
+        id: id.to_string(),
+        x: 0,
+        y,
+        width: 5,
+        height: 3,
+        is_dummy: false,
+    };
+    let mut c = canvas_new(5, 9);
+    paint_node(
+        &mut c,
+        charset_unicode(),
+        mk("A", 0),
+        NodeShape::Rectangle,
+        "A".to_string(),
+    );
+    paint_node(
+        &mut c,
+        charset_unicode(),
+        mk("B", 6),
+        NodeShape::Rectangle,
+        "B".to_string(),
+    );
+    let edge = RoutedEdge {
+        from_id: "A".to_string(),
+        to_id: "B".to_string(),
+        edge_type: et,
+        label: label.to_string(),
+        reversed,
+        waypoints: vec![Point { x: 2, y: 2 }, Point { x: 2, y: 6 }],
+    };
+    paint_edge(&mut c, charset_unicode(), edge);
+    rtrim_lines(canvas_to_string(c))
+}
+
+#[test]
+fn edge_solid_arrow() {
+    // A --> B : exit stub ┬ on A, solid line, ▼ arrowhead above B.
+    assert_eq!(
+        paint_vertical_edge(mermaid_ascii::EdgeType::Arrow, false, ""),
+        "┌───┐\n│ A │\n└─┬─┘\n  │\n  │\n  ▼\n┌───┐\n│ B │\n└───┘\n"
+    );
+}
+
+#[test]
+fn edge_plain_line() {
+    // C --- D : solid line, no arrowhead, target border left intact.
+    assert_eq!(
+        paint_vertical_edge(mermaid_ascii::EdgeType::Line, false, ""),
+        "┌───┐\n│ A │\n└─┬─┘\n  │\n  │\n  │\n┌───┐\n│ B │\n└───┘\n"
+    );
+}
+
+#[test]
+fn edge_dotted_arrow() {
+    // E -.-> F : dotted line glyph ╎ with a ▼ arrowhead.
+    assert_eq!(
+        paint_vertical_edge(mermaid_ascii::EdgeType::DottedArrow, false, ""),
+        "┌───┐\n│ A │\n└─┬─┘\n  ╎\n  ╎\n  ▼\n┌───┐\n│ B │\n└───┘\n"
+    );
+}
+
+#[test]
+fn edge_thick_arrow() {
+    // G ==> H : thick line glyph ║ with a ▼ arrowhead.
+    assert_eq!(
+        paint_vertical_edge(mermaid_ascii::EdgeType::ThickArrow, false, ""),
+        "┌───┐\n│ A │\n└─┬─┘\n  ║\n  ║\n  ▼\n┌───┐\n│ B │\n└───┘\n"
+    );
+}
+
+#[test]
+fn edge_bidirectional() {
+    // I <--> J : arrowheads at both ends (▲ near source, ▼ near target).
+    assert_eq!(
+        paint_vertical_edge(mermaid_ascii::EdgeType::BidirArrow, false, ""),
+        "┌───┐\n│ A │\n└─┬─┘\n  ▲\n  │\n  ▼\n┌───┐\n│ B │\n└───┘\n"
+    );
+}
+
+#[test]
+fn edge_reversed_flips_arrowhead() {
+    // A FAS-reversed arrow flows source->target downward but its head belongs on the
+    // source end, so the arrowhead flips up to ▲ and the target border stays clean.
+    assert_eq!(
+        paint_vertical_edge(mermaid_ascii::EdgeType::Arrow, true, ""),
+        "┌───┐\n│ A │\n└─┬─┘\n  ▲\n  │\n  │\n┌───┐\n│ B │\n└───┘\n"
+    );
+}
+
+#[test]
+fn edge_label_at_midpoint() {
+    // Edge label sits beside the line at the path midpoint. Wider canvas so it fits.
+    use mermaid_ascii::{
+        LayoutNode, NodeShape, Point, RoutedEdge, canvas_new, canvas_to_string, charset_unicode,
+        paint_edge, paint_node,
+    };
+    let mk = |id: &str, y: i32| LayoutNode {
+        id: id.to_string(),
+        x: 0,
+        y,
+        width: 5,
+        height: 3,
+        is_dummy: false,
+    };
+    let mut c = canvas_new(10, 9);
+    paint_node(
+        &mut c,
+        charset_unicode(),
+        mk("A", 0),
+        NodeShape::Rectangle,
+        "A".to_string(),
+    );
+    paint_node(
+        &mut c,
+        charset_unicode(),
+        mk("B", 6),
+        NodeShape::Rectangle,
+        "B".to_string(),
+    );
+    let edge = RoutedEdge {
+        from_id: "A".to_string(),
+        to_id: "B".to_string(),
+        edge_type: mermaid_ascii::EdgeType::Arrow,
+        label: "yes".to_string(),
+        reversed: false,
+        waypoints: vec![Point { x: 2, y: 2 }, Point { x: 2, y: 6 }],
+    };
+    paint_edge(&mut c, charset_unicode(), edge);
+    let out = canvas_to_string(c);
+    // Midpoint cell is row 4 (cells 2,3,4,5,6 -> index 2 -> y=4); label starts at col 3.
+    assert_eq!(out.lines().nth(4).unwrap().trim_end(), "  │yes");
+}
+
+#[test]
+fn edge_through_dummy_is_straight_passthrough() {
+    // An edge segment ending at a dummy bend point gets no arrowhead and no border
+    // skip — the dummy cell is painted as a straight line continuation.
+    use mermaid_ascii::{
+        LayoutNode, NodeShape, Point, RoutedEdge, canvas_new, canvas_to_string, charset_unicode,
+        paint_edge, paint_node,
+    };
+    let a = LayoutNode {
+        id: "A".to_string(),
+        x: 0,
+        y: 0,
+        width: 5,
+        height: 3,
+        is_dummy: false,
+    };
+    let mut c = canvas_new(5, 6);
+    paint_node(
+        &mut c,
+        charset_unicode(),
+        a,
+        NodeShape::Rectangle,
+        "A".to_string(),
+    );
+    let edge = RoutedEdge {
+        from_id: "A".to_string(),
+        to_id: "__d0".to_string(),
+        edge_type: mermaid_ascii::EdgeType::Arrow,
+        label: String::new(),
+        reversed: false,
+        waypoints: vec![Point { x: 2, y: 2 }, Point { x: 2, y: 5 }],
+    };
+    paint_edge(&mut c, charset_unicode(), edge);
+    // Stub on A, then plain vertical line all the way down to the dummy cell (no ▼).
+    assert_eq!(
+        rtrim_lines(canvas_to_string(c)),
+        "┌───┐\n│ A │\n└─┬─┘\n  │\n  │\n  │\n"
+    );
+}

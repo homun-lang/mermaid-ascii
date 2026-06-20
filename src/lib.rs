@@ -34,7 +34,7 @@ mod generated {
 pub use generated::parse_graph;
 pub use generated::{
     BoxChars, Canvas, CharSet, canvas_new, canvas_to_string, charset_ascii, charset_unicode,
-    paint_node,
+    paint_edge, paint_node,
 };
 pub use generated::{Direction, Edge, EdgeType, Graph, Node, NodeShape, Subgraph};
 pub use generated::{
