@@ -212,38 +212,7 @@ bash examples/gen.sh
 
 ## Compiler Design
 
-**Narrow-waist ("hourglass") architecture.** Each diagram type owns its own **AST shape**
-and its own **layout engine**, but every layout engine emits **one shared graphIR**
-(`LayoutResult`). The ASCII and SVG renderers consume only that graphIR, so they never
-need to know which diagram type produced it. To add a diagram type you add an AST + a
-layout engine that emits the same graphIR — the renderers stay untouched.
-
-```
-                shared tokenizer
-                      │
-          parser registry  (detect_type → dispatch)
-            ╱         │          ╲
-   Flowchart AST  Sequence AST  Architecture AST     ← AST shape differs per type
-        │             │            │
-   graph layout   seq layout   grid layout           ← layout engine differs per type
-   (Sugiyama)     (linear)      (force/grid)
-        ╲            │           ╱
-        ★ one shared graphIR (LayoutResult) ★         ← SHARED waist
-          LayoutNode[] (x/y/w/h) + RoutedEdge[] (waypoints)
-                      │
-          ASCII renderer  /  SVG renderer             ← SHARED (IR-only)
-```
-
-- **Shared (lower half):** the graphIR + ASCII/SVG renderers.
-- **Per-type (upper half):** the AST and the layout engine converting it into graphIR.
-- A layout engine's only contract: emit a valid `LayoutNode[] + RoutedEdge[]`.
-
-**Current scope:** only the **flowchart** path is implemented (Sugiyama → graphIR →
-ASCII/SVG), directions **TD / LR** only. Sequence / architecture types are future
-extensions of this same architecture.
-
-Below is the full multi-phase pipeline for the flowchart path. Each phase transforms one
-representation to the next.
+Multi-phase compiler pipeline. Each phase transforms one representation to the next.
 
 ```
                     Mermaid DSL text
