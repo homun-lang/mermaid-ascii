@@ -158,3 +158,46 @@ fn tokenize_labeled_edge() {
     assert_eq!(tokens[6].text, "yes");
     assert_eq!(tokens[8].text, "B");
 }
+
+#[test]
+fn parse_graph_td() {
+    use mermaid_ascii::{Direction, parse_graph, tokenize};
+    let tokens = tokenize("graph TD\n    A --> B\n".to_string());
+    let graph = parse_graph(tokens);
+    assert_eq!(graph.direction, Direction::TD);
+    assert!(graph.nodes.is_empty());
+    assert!(graph.edges.is_empty());
+    assert!(graph.subgraphs.is_empty());
+}
+
+#[test]
+fn parse_graph_lr() {
+    use mermaid_ascii::{Direction, parse_graph, tokenize};
+    let tokens = tokenize("flowchart LR\n    A --> B\n".to_string());
+    let graph = parse_graph(tokens);
+    assert_eq!(graph.direction, Direction::LR);
+}
+
+#[test]
+fn parse_graph_tb_alias() {
+    use mermaid_ascii::{Direction, parse_graph, tokenize};
+    let tokens = tokenize("graph TB\n    A --> B\n".to_string());
+    let graph = parse_graph(tokens);
+    assert_eq!(graph.direction, Direction::TD);
+}
+
+#[test]
+fn parse_graph_default_direction() {
+    use mermaid_ascii::{Direction, parse_graph, tokenize};
+    let tokens = tokenize("graph\n    A --> B\n".to_string());
+    let graph = parse_graph(tokens);
+    assert_eq!(graph.direction, Direction::TD);
+}
+
+#[test]
+fn parse_graph_unsupported_direction() {
+    use mermaid_ascii::{Direction, parse_graph, tokenize};
+    let tokens = tokenize("graph RL\n    A --> B\n".to_string());
+    let graph = parse_graph(tokens);
+    assert_eq!(graph.direction, Direction::TD);
+}

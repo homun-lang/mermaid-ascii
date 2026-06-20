@@ -19,7 +19,9 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/runtime.rs"));
     include!(concat!(env!("OUT_DIR"), "/types.rs"));
     include!(concat!(env!("OUT_DIR"), "/lexer.rs"));
+    include!(concat!(env!("OUT_DIR"), "/parser.rs"));
 }
+pub use generated::parse_graph;
 pub use generated::{Direction, Edge, EdgeType, Graph, Node, NodeShape, Subgraph};
 pub use generated::{Token, TokenKind, tokenize};
 
@@ -27,20 +29,13 @@ pub use generated::{Token, TokenKind, tokenize};
 use wasm_bindgen::prelude::*;
 
 pub fn render_dsl(text: &str, ascii: bool, direction: Option<Direction>) -> String {
-    let graph = parse(text, direction);
+    let tokens = tokenize(text.to_string());
+    let mut graph = parse_graph(tokens);
+    if let Some(dir) = direction {
+        graph.direction = dir;
+    }
     let laid_out = layout(&graph);
     render(&laid_out, ascii)
-}
-
-fn parse(text: &str, dir_override: Option<Direction>) -> Graph {
-    let _ = text;
-    let direction = dir_override.unwrap_or(Direction::TD);
-    Graph {
-        nodes: vec![],
-        edges: vec![],
-        subgraphs: vec![],
-        direction,
-    }
 }
 
 fn layout(graph: &Graph) -> Graph {

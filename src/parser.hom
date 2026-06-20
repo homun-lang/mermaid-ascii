@@ -1,0 +1,34 @@
+use std
+
+parse_graph := (tokens: @[Token]) -> Graph {
+  direction ::= Direction.TD
+  i ::= 0
+  found ::= false
+  while (i < len(tokens) and not found) {
+    if (tokens[i].kind == TokenKind.Header) {
+      j ::= i + 1
+      while (j < len(tokens) and not found) {
+        if (tokens[j].kind == TokenKind.DirTD) {
+          direction ::= Direction.TD
+          found ::= true
+        }
+        if (tokens[j].kind == TokenKind.DirLR) {
+          direction ::= Direction.LR
+          found ::= true
+        }
+        if (tokens[j].kind == TokenKind.Newline) {
+          found ::= true
+        }
+        j ::= j + 1
+      }
+    }
+    i ::= i + 1
+  }
+
+  Graph {
+    nodes: @[],
+    edges: @[],
+    subgraphs: @[],
+    direction: direction
+  }
+}
