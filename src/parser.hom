@@ -120,12 +120,39 @@ parse_graph := (tokens: @[Token]) -> Graph {
       i ::= i + 1
       continue
     }
-    // subgraph blocks are a separate ticket; skip the header line, keep members flat
+    // subgraph <name> ... end  →  Subgraph{id,label,nodes}. Members also go into
+    // the flat graph.nodes (layout positions all nodes; subgraphs just group them).
     if (k == TokenKind.SubgraphKw) {
       i ::= i + 1
+      sgid ::= str("")
+      sglabel ::= str("")
+      if (i < len(tokens) and tokens[i].kind == TokenKind.Ident) {
+        nid, nlabel, nshape, nend := parse_node_at(tokens, i)
+        i ::= nend
+        sgid ::= nid
+        sglabel ::= nlabel
+      }
+      // consume the rest of the header line
       while (i < len(tokens) and tokens[i].kind != TokenKind.Newline) {
         i ::= i + 1
       }
+
+      sgnodes ::= @[]
+      // body until matching 'end' (goldens are flat; nested headers are skipped)
+      while (i < len(tokens) and tokens[i].kind != TokenKind.EndKw) {
+        if (tokens[i].kind == TokenKind.Ident) {
+          mid, mlabel, mshape, mend := parse_node_at(tokens, i)
+          i ::= mend
+          nodes ::= ensure_node(nodes, mid, mlabel, mshape)
+          push(sgnodes, Node { id: mid, label: mlabel, shape: mshape })
+        } else {
+          i ::= i + 1
+        }
+      }
+      if (i < len(tokens) and tokens[i].kind == TokenKind.EndKw) {
+        i ::= i + 1
+      }
+      push(subgraphs, Subgraph { id: sgid, label: sglabel, nodes: sgnodes, edges: @[] })
       continue
     }
 

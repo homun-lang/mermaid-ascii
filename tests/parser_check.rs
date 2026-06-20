@@ -44,3 +44,38 @@ fn edge_label() {
     assert_eq!(g.edges.len(), 1);
     assert_eq!(g.edges[0].label, "yes");
 }
+
+#[test]
+fn subgraphs_flat() {
+    let src = std::fs::read_to_string("_site/examples/subgraph.mm.md").unwrap();
+    let g = parse(&src);
+    assert_eq!(g.subgraphs.len(), 2, "two subgraphs");
+    assert_eq!(g.subgraphs[0].id, "Frontend");
+    assert_eq!(g.subgraphs[0].nodes.len(), 2, "Frontend has A,B");
+    assert_eq!(g.subgraphs[1].id, "Backend");
+    assert_eq!(g.subgraphs[1].nodes.len(), 2, "Backend has C,D");
+    // edges at top level: Frontend-->Backend, C-->D
+    assert_eq!(g.edges.len(), 2);
+}
+
+#[test]
+fn multiline_labels() {
+    let src = std::fs::read_to_string("_site/examples/multiline.mm.md").unwrap();
+    let g = parse(&src);
+    assert_eq!(g.nodes.len(), 3);
+    assert_eq!(g.edges.len(), 2);
+    // label retains the embedded newline from "Web Server\nnginx"
+    assert!(
+        g.nodes[0].label.contains('\n'),
+        "label has newline: {:?}",
+        g.nodes[0].label
+    );
+    assert_eq!(g.nodes[0].label, "Web Server\nnginx");
+}
+
+#[test]
+fn architecture_subgraphs() {
+    let src = std::fs::read_to_string("_site/examples/architecture.mm.md").unwrap();
+    let g = parse(&src);
+    assert_eq!(g.subgraphs.len(), 3, "Frontend, Backend, Worker");
+}

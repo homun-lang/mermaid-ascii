@@ -3,6 +3,7 @@
     unused_imports,
     unused_macros,
     unused_mut,
+    unused_variables,
     clippy::assign_op_pattern,
     clippy::clone_on_copy,
     clippy::manual_map,
