@@ -1,0 +1,178 @@
+use std
+
+// ASCII renderer stage 0: the character canvas + glyph sets.
+//
+// Canvas is a fixed w x h grid of single-char strings (initialized to spaces).
+// canvas_set paints one cell; out-of-range and negative coordinates are silently
+// skipped so callers can draw without clamping. canvas_to_string flattens the grid
+// into text: each row is right-trimmed (leading spaces matter for positioning, so
+// only trailing whitespace is dropped), trailing blank rows are removed, and the
+// result ends with exactly one "\n" (empty canvas -> "").
+//
+// BoxChars holds the box-drawing glyphs (lines / corners / junctions); CharSet
+// bundles those plus rounded corners and arrowheads. Each has a Unicode variant
+// and an ASCII fallback so the renderer can switch on a single flag.
+
+@derive(Clone, Debug, PartialEq)
+Canvas := struct { width: int, height: int, cells: @[@[str]] }
+
+@derive(Clone, Debug, PartialEq)
+BoxChars := struct {
+  h: str,
+  v: str,
+  tl: str,
+  tr: str,
+  bl: str,
+  br: str,
+  cross: str,
+  t_down: str,
+  t_up: str,
+  t_left: str,
+  t_right: str,
+}
+
+@derive(Clone, Debug, PartialEq)
+CharSet := struct {
+  bx: BoxChars,
+  round_tl: str,
+  round_tr: str,
+  round_bl: str,
+  round_br: str,
+  arrow_up: str,
+  arrow_down: str,
+  arrow_left: str,
+  arrow_right: str,
+}
+
+// A w x h canvas filled with spaces.
+canvas_new := (w: int, h: int) -> Canvas {
+  cells ::= @[]
+  y ::= 0
+  while (y < h) {
+    row ::= @[]
+    x ::= 0
+    while (x < w) {
+      push(row, " ")
+      x ::= x + 1
+    }
+    push(cells, row)
+    y ::= y + 1
+  }
+  Canvas { width: w, height: h, cells: cells }
+}
+
+// Paint a single cell. Negative or out-of-range coordinates are ignored.
+canvas_set := (c::Canvas, x: int, y: int, ch: str) -> _ {
+  if (x >= 0 and y >= 0 and x < c.width and y < c.height) {
+    c.cells[y][x] := ch
+  }
+}
+
+// Cell content, or " " for out-of-range / negative coordinates.
+canvas_get := (c: Canvas, x: int, y: int) -> str {
+  if (x >= 0 and y >= 0 and x < c.width and y < c.height) {
+    => c.cells[y][x]
+  }
+  " "
+}
+
+// Strip trailing spaces only (leading spaces are significant for layout).
+rtrim := (s: str) -> str {
+  e ::= len(s)
+  while (e > 0 and char_at(s, e - 1) == " ") {
+    e ::= e - 1
+  }
+  substr(s, 0, e)
+}
+
+// Flatten the grid to text: right-trim each row, drop trailing blank rows, and
+// terminate with one "\n". An all-blank canvas yields "".
+canvas_to_string := (c: Canvas) -> str {
+  rows ::= @[]
+  y ::= 0
+  while (y < c.height) {
+    push(rows, rtrim(join(c.cells[y], "")))
+    y ::= y + 1
+  }
+
+  last ::= len(rows) - 1
+  while (last >= 0 and len(rows[last]) == 0) {
+    last ::= last - 1
+  }
+
+  kept ::= @[]
+  i ::= 0
+  while (i <= last) {
+    push(kept, rows[i])
+    i ::= i + 1
+  }
+  // `join` returns a String, so the empty case yields "" with the right type
+  // (a bare "" literal would be &str and mismatch the String return).
+  body := join(kept, "\n")
+  if (len(kept) == 0) { => body }
+  "${body}\n"
+}
+
+// Unicode box-drawing glyphs.
+box_unicode := () -> BoxChars {
+  BoxChars {
+    h: "─",
+    v: "│",
+    tl: "┌",
+    tr: "┐",
+    bl: "└",
+    br: "┘",
+    cross: "┼",
+    t_down: "┬",
+    t_up: "┴",
+    t_left: "┤",
+    t_right: "├",
+  }
+}
+
+// ASCII fallback box glyphs.
+box_ascii := () -> BoxChars {
+  BoxChars {
+    h: "-",
+    v: "|",
+    tl: "+",
+    tr: "+",
+    bl: "+",
+    br: "+",
+    cross: "+",
+    t_down: "+",
+    t_up: "+",
+    t_left: "+",
+    t_right: "+",
+  }
+}
+
+// Full Unicode glyph set: box + rounded corners + arrowheads.
+charset_unicode := () -> CharSet {
+  CharSet {
+    bx: box_unicode(),
+    round_tl: "╭",
+    round_tr: "╮",
+    round_bl: "╰",
+    round_br: "╯",
+    arrow_up: "▲",
+    arrow_down: "▼",
+    arrow_left: "◀",
+    arrow_right: "▶",
+  }
+}
+
+// Full ASCII glyph set.
+charset_ascii := () -> CharSet {
+  CharSet {
+    bx: box_ascii(),
+    round_tl: "+",
+    round_tr: "+",
+    round_bl: "+",
+    round_br: "+",
+    arrow_up: "^",
+    arrow_down: "v",
+    arrow_left: "<",
+    arrow_right: ">",
+  }
+}
