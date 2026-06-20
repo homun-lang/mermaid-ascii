@@ -1,0 +1,187 @@
+use std
+
+// Layout stage 1: cycle removal via greedy feedback-arc-set (Eades-Lin-Smyth).
+//
+// Sugiyama layered layout requires a DAG. Cyclic mermaid graphs are made acyclic
+// by REVERSING a small set of "back" edges. We record each reversal on the edge
+// (`reversed: true`) so the renderer can flip the arrowhead back to its original
+// direction. Node/Edge/EdgeType come from types.hom (same generated module).
+
+@derive(Clone, Debug, PartialEq)
+LayoutEdge := struct {
+  from_id: str,
+  to_id: str,
+  edge_type: EdgeType,
+  label: str,
+  reversed: bool,
+}
+
+// Position of `id` in `lst`, or -1. (Local linear scan — std index_of/reversed
+// take slices but this homunc version emits owned-value calls for them.)
+pos_of := (lst: @[str], id: str) -> int {
+  i ::= 0
+  while (i < len(lst)) {
+    if (lst[i] == id) { => i }
+    i ::= i + 1
+  }
+  -1
+}
+
+// Count out-edges of `id` that land on a node still in `remaining` (self-loops ignored).
+count_out := (remaining: @[str], edges: @[Edge], id: str) -> int {
+  c ::= 0
+  i ::= 0
+  while (i < len(edges)) {
+    f := edges[i].from_id
+    t := edges[i].to_id
+    if (f == id and t != id and pos_of(remaining, t) >= 0) {
+      c ::= c + 1
+    }
+    i ::= i + 1
+  }
+  c
+}
+
+// Count in-edges of `id` that originate from a node still in `remaining`.
+count_in := (remaining: @[str], edges: @[Edge], id: str) -> int {
+  c ::= 0
+  i ::= 0
+  while (i < len(edges)) {
+    f := edges[i].from_id
+    t := edges[i].to_id
+    if (t == id and f != id and pos_of(remaining, f) >= 0) {
+      c ::= c + 1
+    }
+    i ::= i + 1
+  }
+  c
+}
+
+// First sink (out-degree 0 among remaining), or -1.
+find_sink := (remaining: @[str], edges: @[Edge]) -> int {
+  i ::= 0
+  while (i < len(remaining)) {
+    rid := remaining[i]
+    if (count_out(remaining, edges, rid) == 0) { => i }
+    i ::= i + 1
+  }
+  -1
+}
+
+// First source (in-degree 0 among remaining), or -1.
+find_source := (remaining: @[str], edges: @[Edge]) -> int {
+  i ::= 0
+  while (i < len(remaining)) {
+    rid := remaining[i]
+    if (count_in(remaining, edges, rid) == 0) { => i }
+    i ::= i + 1
+  }
+  -1
+}
+
+// Index of the remaining node maximizing (out-degree - in-degree).
+pick_max_delta := (remaining: @[str], edges: @[Edge]) -> int {
+  best ::= 0
+  bestdelta ::= 0 - 1000000
+  i ::= 0
+  while (i < len(remaining)) {
+    rid := remaining[i]
+    d := count_out(remaining, edges, rid) - count_in(remaining, edges, rid)
+    if (d > bestdelta) {
+      bestdelta ::= d
+      best ::= i
+    }
+    i ::= i + 1
+  }
+  best
+}
+
+// Copy of `lst` with the element at `idx` removed.
+remove_at := (lst: @[str], idx: int) -> @[str] {
+  out ::= @[]
+  i ::= 0
+  while (i < len(lst)) {
+    if (i != idx) { push(out, lst[i]) }
+    i ::= i + 1
+  }
+  out
+}
+
+// Greedy FAS vertex ordering: peel sinks (to the right), sources (to the left),
+// then the max out-minus-in node (to the left). Final order = left ++ reverse(right).
+// Orienting every edge along this order yields a DAG with few reversals.
+greedy_order := (nodes: @[Node], edges: @[Edge]) -> @[str] {
+  remaining ::= @[]
+  i ::= 0
+  while (i < len(nodes)) {
+    push(remaining, nodes[i].id)
+    i ::= i + 1
+  }
+
+  left ::= @[]
+  right ::= @[]
+
+  while (len(remaining) > 0) {
+    // Peel all sinks then all sources, repeatedly, until neither exists.
+    progress ::= true
+    while (progress) {
+      progress ::= false
+      sk := find_sink(remaining, edges)
+      if (sk >= 0) {
+        push(right, remaining[sk])
+        remaining ::= remove_at(remaining, sk)
+        progress ::= true
+        continue
+      }
+      sc := find_source(remaining, edges)
+      if (sc >= 0) {
+        push(left, remaining[sc])
+        remaining ::= remove_at(remaining, sc)
+        progress ::= true
+      }
+    }
+    // No source/sink: break the cycle at the highest-flow node.
+    if (len(remaining) > 0) {
+      mx := pick_max_delta(remaining, edges)
+      push(left, remaining[mx])
+      remaining ::= remove_at(remaining, mx)
+    }
+  }
+
+  order ::= @[]
+  i ::= 0
+  while (i < len(left)) {
+    push(order, left[i])
+    i ::= i + 1
+  }
+  // Append `right` reversed (sinks were peeled front-to-back; emit back-to-front).
+  j ::= len(right) - 1
+  while (j >= 0) {
+    push(order, right[j])
+    j ::= j - 1
+  }
+  order
+}
+
+// Remove cycles: orient each edge along the greedy-FAS order. Edges that point
+// "backward" (or form self-loops) are reversed and flagged. Result is a DAG.
+remove_cycles := (graph: Graph) -> @[LayoutEdge] {
+  order := greedy_order(graph.nodes, graph.edges)
+  out ::= @[]
+  i ::= 0
+  while (i < len(graph.edges)) {
+    a := graph.edges[i].from_id
+    b := graph.edges[i].to_id
+    et := graph.edges[i].edge_type
+    lbl := graph.edges[i].label
+    pf := pos_of(order, a)
+    pt := pos_of(order, b)
+    if (pf <= pt) {
+      push(out, LayoutEdge { from_id: a, to_id: b, edge_type: et, label: lbl, reversed: false })
+    } else {
+      push(out, LayoutEdge { from_id: b, to_id: a, edge_type: et, label: lbl, reversed: true })
+    }
+    i ::= i + 1
+  }
+  out
+}
