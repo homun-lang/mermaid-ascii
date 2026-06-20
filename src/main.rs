@@ -10,6 +10,10 @@ struct Cli {
     #[arg(short, long)]
     ascii: bool,
 
+    /// Output SVG instead of text
+    #[arg(long)]
+    svg: bool,
+
     /// Override graph direction (TD, LR)
     #[arg(short, long)]
     direction: Option<String>,
