@@ -87,3 +87,90 @@ svg_node := (n: LayoutNode, shape: NodeShape, label: str) -> str {
   parts := @[frame, label_el]
   join(parts, "\n")
 }
+
+// ── edges ────────────────────────────────────────────────────────────────────
+// A RoutedEdge carries an orthogonal polyline of waypoints (pathfinder.hom) in
+// the same cell-grid coords as nodes, so each waypoint maps through svg_px/svg_py.
+// EdgeType selects styling: dotted edges get a dash pattern, thick edges a heavier
+// stroke, and *Arrow types an arrowhead marker. BidirArrow marks both ends; a
+// reversed edge (flipped during cycle removal) carries its head at the source.
+// RoutedEdge/Point/EdgeType come from the same generated module (pathfinder.hom +
+// types.hom).
+
+svg_edge_is_dotted := (et: EdgeType) -> bool {
+  et == EdgeType.DottedArrow or et == EdgeType.DottedLine
+}
+
+svg_edge_is_thick := (et: EdgeType) -> bool {
+  et == EdgeType.ThickArrow or et == EdgeType.ThickLine
+}
+
+svg_edge_has_arrow := (et: EdgeType) -> bool {
+  et == EdgeType.Arrow or et == EdgeType.DottedArrow or et == EdgeType.ThickArrow or et == EdgeType.BidirArrow
+}
+
+svg_edge_is_bidir := (et: EdgeType) -> bool {
+  et == EdgeType.BidirArrow
+}
+
+// Dash/thick stroke attribute (empty for a plain solid edge). Dotted overrides
+// thick when both could apply (matches the EdgeType variants, which are exclusive).
+svg_edge_style := (et: EdgeType) -> str {
+  if (svg_edge_is_dotted(et)) { => str("stroke-dasharray=\"6 4\"") }
+  if (svg_edge_is_thick(et)) { => str("stroke-width=\"3\"") }
+  str("")
+}
+
+// Arrowhead marker attributes (each with a leading space). Bidirectional carries
+// both ends; a reversed single-arrow flips its head to the source.
+svg_edge_markers := (et: EdgeType, reversed: bool) -> str {
+  if (svg_edge_is_bidir(et)) {
+    => str(" marker-end=\"url(#arrowhead)\" marker-start=\"url(#arrowhead-rev)\"")
+  }
+  if (svg_edge_has_arrow(et)) {
+    if (reversed) {
+      => str(" marker-start=\"url(#arrowhead-rev)\"")
+    }
+    => str(" marker-end=\"url(#arrowhead)\"")
+  }
+  str("")
+}
+
+// "x0,y0 x1,y1 ..." pixel point list from the cell-grid waypoints.
+svg_edge_points := (waypoints: @[Point]) -> str {
+  pts ::= str("")
+  i ::= 0
+  while (i < len(waypoints)) {
+    p := waypoints[i]
+    seg := "${svg_px(p.x)},${svg_py(p.y)}"
+    if (i == 0) {
+      pts ::= seg
+    } else {
+      pts ::= "${pts} ${seg}"
+    }
+    i ::= i + 1
+  }
+  pts
+}
+
+// Edge label <text>, centered just above the path's middle waypoint.
+svg_edge_label := (e: RoutedEdge) -> str {
+  mid_i := len(e.waypoints) / 2
+  mid := e.waypoints[mid_i]
+  lx := svg_px(mid.x)
+  ly := svg_py(mid.y) - 8
+  "<text x=\"${lx}\" y=\"${ly}\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"12\" fill=\"#333\">${e.label}</text>"
+}
+
+// Emit the SVG for one routed edge: the styled polyline, plus a label <text> on a
+// following line when the edge is labeled.
+svg_edge := (e: RoutedEdge) -> str {
+  pts := svg_edge_points(e.waypoints)
+  style := svg_edge_style(e.edge_type)
+  markers := svg_edge_markers(e.edge_type, e.reversed)
+  poly := "<polyline points=\"${pts}\" fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" ${style}${markers}/>"
+  if (len(e.label) > 0) {
+    => "${poly}\n${svg_edge_label(e)}"
+  }
+  poly
+}
