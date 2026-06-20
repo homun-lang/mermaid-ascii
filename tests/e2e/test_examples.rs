@@ -301,3 +301,114 @@ fn assign_coords_no_overlap_diamond() {
     assert_eq!(a.height, 3);
     assert!(a.width >= 5);
 }
+
+// Full layout through routing: returns (laid-out nodes, routed edges).
+fn route_for(
+    src: &str,
+) -> (
+    Vec<mermaid_ascii::LayoutNode>,
+    Vec<mermaid_ascii::RoutedEdge>,
+) {
+    use mermaid_ascii::{
+        assign_coords, assign_layers, insert_dummies, order_layers, parse_graph, remove_cycles,
+        route_edges, tokenize,
+    };
+    let graph = parse_graph(tokenize(src.to_string()));
+    let dir = graph.direction.clone();
+    let dag = remove_cycles(graph.clone());
+    let layers = assign_layers(graph.nodes.clone(), dag.clone());
+    let expanded = insert_dummies(layers, dag);
+    let ordered = order_layers(expanded.nodes, expanded.edges.clone());
+    let nodes = assign_coords(ordered, graph.nodes.clone(), dir.clone());
+    let routed = route_edges(nodes.clone(), expanded.edges, dir);
+    (nodes, routed)
+}
+
+// True if cell (x,y) lies strictly inside a real node box other than `from`/`to`.
+fn cell_in_other_box(
+    nodes: &[mermaid_ascii::LayoutNode],
+    from: &str,
+    to: &str,
+    x: i32,
+    y: i32,
+) -> Option<String> {
+    for n in nodes {
+        if n.is_dummy || n.id == from || n.id == to {
+            continue;
+        }
+        if x >= n.x && x < n.x + n.width && y >= n.y && y < n.y + n.height {
+            return Some(n.id.clone());
+        }
+    }
+    None
+}
+
+// Walk every orthogonal segment between consecutive waypoints, asserting no cell
+// passes through a node box that isn't this edge's own endpoint.
+fn assert_no_box_crossing(src: &str) {
+    let (nodes, routed) = route_for(src);
+    assert!(!routed.is_empty(), "no edges routed for: {src}");
+    for e in &routed {
+        let w = &e.waypoints;
+        assert!(
+            w.len() >= 2,
+            "edge {}->{} has < 2 waypoints",
+            e.from_id,
+            e.to_id
+        );
+        for seg in w.windows(2) {
+            let (a, b) = (&seg[0], &seg[1]);
+            let dx = (b.x - a.x).signum();
+            let dy = (b.y - a.y).signum();
+            assert!(
+                dx == 0 || dy == 0,
+                "edge {}->{} segment not orthogonal",
+                e.from_id,
+                e.to_id
+            );
+            let (mut x, mut y) = (a.x, a.y);
+            loop {
+                if let Some(hit) = cell_in_other_box(&nodes, &e.from_id, &e.to_id, x, y) {
+                    panic!(
+                        "edge {}->{} crosses node {} at ({},{})",
+                        e.from_id, e.to_id, hit, x, y
+                    );
+                }
+                if x == b.x && y == b.y {
+                    break;
+                }
+                x += dx;
+                y += dy;
+            }
+        }
+    }
+}
+
+#[test]
+fn route_no_box_crossing_chain_td() {
+    assert_no_box_crossing("graph TD\n    A --> B\n    B --> C\n");
+}
+
+#[test]
+fn route_no_box_crossing_diamond_td() {
+    assert_no_box_crossing("graph TD\n    A --> B\n    A --> C\n    B --> D\n    C --> D\n");
+}
+
+#[test]
+fn route_no_box_crossing_chain_lr() {
+    assert_no_box_crossing("graph LR\n    A --> B\n    B --> C\n");
+}
+
+#[test]
+fn route_waypoints_connect_endpoints_td() {
+    // First waypoint sits on the source box border, last on the target box border.
+    let (nodes, routed) = route_for("graph TD\n    A --> B\n");
+    let e = &routed[0];
+    let a = nodes.iter().find(|n| n.id == e.from_id).unwrap();
+    let b = nodes.iter().find(|n| n.id == e.to_id).unwrap();
+    let first = e.waypoints.first().unwrap();
+    let last = e.waypoints.last().unwrap();
+    // start on A's bottom border row, end on B's top border row
+    assert_eq!(first.y, a.y + a.height - 1);
+    assert_eq!(last.y, b.y);
+}

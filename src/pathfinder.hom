@@ -1,0 +1,299 @@
+use std
+use heap
+
+// Layout stage 5: orthogonal edge routing via A* on the character grid.
+//
+// Each unit-segment edge (from assign_coords / insert_dummies) is routed as a
+// path of grid cells that steps around real node boxes, producing orthogonal
+// waypoints (a RoutedEdge). Dummy nodes are 1x1 bend points and are NOT treated
+// as obstacles — only real node boxes block the path.
+//
+// Grid cells are addressed by a single integer id = y * W + x (W = grid width),
+// so the A* open set (`heap`, min-priority queue keyed by f-score) carries the id
+// as a string, and the g-score / came-from / visited maps are int-keyed dicts
+// (string-keyed dict *reads* don't round-trip through this homunc version, but
+// int keys are Copy and do). LayoutNode/LayoutEdge/Direction/EdgeType come from
+// the same generated module (layout.hom + types.hom).
+
+@derive(Clone, Debug, PartialEq)
+Point := struct { x: int, y: int }
+
+@derive(Clone, Debug, PartialEq)
+RoutedEdge := struct {
+  from_id: str,
+  to_id: str,
+  edge_type: EdgeType,
+  label: str,
+  reversed: bool,
+  waypoints: @[Point],
+}
+
+// |a|, without leaning on std (keeps the dependency surface tiny).
+abs_i := (a: int) -> int {
+  if (a < 0) { => 0 - a }
+  a
+}
+
+// Manhattan distance — the admissible A* heuristic on a 4-connected grid.
+manhattan := (x: int, y: int, gx: int, gy: int) -> int {
+  abs_i(gx - x) + abs_i(gy - y)
+}
+
+// Index of the LayoutNode with `id`, or -1.
+node_index := (nodes: @[LayoutNode], id: str) -> int {
+  i ::= 0
+  while (i < len(nodes)) {
+    if (nodes[i].id == id) { => i }
+    i ::= i + 1
+  }
+  -1
+}
+
+// Cells covered by every real (non-dummy) node box except the two endpoints of
+// the edge being routed. Stored as a dict-as-set: key = cell id, value = 1.
+// Endpoints are excluded so the path can start/end on cells adjacent to them.
+build_blocked := (nodes: @[LayoutNode], from_i: int, to_i: int, w: int) -> @{int: int} {
+  blocked ::= @{}
+  i ::= 0
+  while (i < len(nodes)) {
+    if (i != from_i and i != to_i and not nodes[i].is_dummy) {
+      nx := nodes[i].x
+      ny := nodes[i].y
+      nw := nodes[i].width
+      nh := nodes[i].height
+      yy ::= ny
+      while (yy < ny + nh) {
+        xx ::= nx
+        while (xx < nx + nw) {
+          dict_insert(blocked, yy * w + xx, 1)
+          xx ::= xx + 1
+        }
+        yy ::= yy + 1
+      }
+    }
+    i ::= i + 1
+  }
+  blocked
+}
+
+// Step cost from `cur` to a neighbor: 1 to continue straight, 3 to turn. The turn
+// penalty biases A* toward long straight runs (fewer bends = cleaner ASCII). The
+// incoming direction is reconstructed from `cur`'s parent in `came`.
+turn_cost := (came: @{int: int}, curid: int, cx: int, cy: int, nx: int, ny: int, w: int) -> int {
+  if (not (curid in came)) { => 1 }
+  p := came[curid]
+  px := p % w
+  py := p / w
+  idx := cx - px
+  idy := cy - py
+  odx := nx - cx
+  ody := ny - cy
+  if (idx == odx and idy == ody) { => 1 }
+  3
+}
+
+// A* from (sx,sy) to (gx,gy) over free grid cells in [0,maxx] x [0,maxy].
+// Returns the cell path (inclusive of both ends), or @[] if unreachable.
+astar := (blocked: @{int: int}, sx: int, sy: int, gx: int, gy: int, maxx: int, maxy: int, w: int) -> @[Point] {
+  open ::= heap_new()
+  gscore ::= @{}
+  came ::= @{}
+  closed ::= @{}
+
+  sid := sy * w + sx
+  gid := gy * w + gx
+  dict_insert(gscore, sid, 0)
+  heap_push(open, manhattan(sx, sy, gx, gy), "${sid}")
+
+  // homunc drops grouping parens, so multiply via intermediate bindings.
+  gw := maxx + 1
+  gh := maxy + 1
+  cells := gw * gh
+
+  found ::= false
+  guard ::= 0
+  maxiter := cells * 8 + 1000
+  while (not heap_is_empty(open) and not found and guard < maxiter) {
+    guard ::= guard + 1
+    curid ::= 0 - 1
+    match heap_pop(open) {
+      Some((_, item)) -> { curid ::= parse_int(item) }
+      none -> { }
+    }
+    if (curid >= 0 and not (curid in closed)) {
+      dict_insert(closed, curid, 1)
+      cx := curid % w
+      cy := curid / w
+      if (curid == gid) {
+        found ::= true
+      } else {
+        gcur := gscore[curid]
+        k ::= 0
+        while (k < 4) {
+          nx ::= cx
+          ny ::= cy
+          if (k == 0) { nx ::= cx + 1 }
+          if (k == 1) { nx ::= cx - 1 }
+          if (k == 2) { ny ::= cy + 1 }
+          if (k == 3) { ny ::= cy - 1 }
+          if (nx >= 0 and nx <= maxx and ny >= 0 and ny <= maxy) {
+            nid := ny * w + nx
+            if (not (nid in blocked) and not (nid in closed)) {
+              tentative := gcur + turn_cost(came, curid, cx, cy, nx, ny, w)
+              better ::= false
+              if (not (nid in gscore)) {
+                better ::= true
+              } else {
+                if (tentative < gscore[nid]) { better ::= true }
+              }
+              if (better) {
+                dict_insert(gscore, nid, tentative)
+                dict_insert(came, nid, curid)
+                heap_push(open, tentative + manhattan(nx, ny, gx, gy), "${nid}")
+              }
+            }
+          }
+          k ::= k + 1
+        }
+      }
+    }
+  }
+
+  out ::= @[]
+  if (not found) { => out }
+
+  // Walk came-from from goal to start, then reverse.
+  path ::= @[]
+  cid ::= gid
+  steps ::= 0
+  limit := cells + 10
+  done ::= false
+  while (not done and steps < limit) {
+    push(path, Point { x: cid % w, y: cid / w })
+    if (cid == sid) {
+      done ::= true
+    } else {
+      if (cid in came) {
+        cid ::= came[cid]
+      } else {
+        done ::= true
+      }
+    }
+    steps ::= steps + 1
+  }
+  j ::= len(path) - 1
+  while (j >= 0) {
+    push(out, path[j])
+    j ::= j - 1
+  }
+  out
+}
+
+// Drop interior points that lie on a straight run (keeps only bends + endpoints),
+// and collapse duplicates. Result is a minimal orthogonal waypoint list.
+simplify := (pts: @[Point]) -> @[Point] {
+  out ::= @[]
+  if (len(pts) == 0) { => out }
+  push(out, pts[0])
+  i ::= 1
+  while (i < len(pts) - 1) {
+    prev := out[len(out) - 1]
+    cur := pts[i]
+    nxt := pts[i + 1]
+    dx1 := cur.x - prev.x
+    dy1 := cur.y - prev.y
+    dx2 := nxt.x - cur.x
+    dy2 := nxt.y - cur.y
+    collinear := (dx1 * dy2 - dy1 * dx2 == 0) and (dx1 * dx2 + dy1 * dy2 >= 0)
+    if (not collinear) { push(out, cur) }
+    i ::= i + 1
+  }
+  if (len(pts) > 1) { push(out, pts[len(pts) - 1]) }
+  out
+}
+
+// Route every unit-segment edge around node obstacles. For TD the edge leaves the
+// bottom of `from` and enters the top of `to`; for LR it leaves the right and
+// enters the left (insert_dummies guarantees `from` precedes `to` in layer order,
+// so the geometric side is fixed). Returns a RoutedEdge per input edge.
+route_edges := (nodes: @[LayoutNode], edges: @[LayoutEdge], dir: Direction) -> @[RoutedEdge] {
+  maxx ::= 1
+  maxy ::= 1
+  i ::= 0
+  while (i < len(nodes)) {
+    rx := nodes[i].x + nodes[i].width
+    ry := nodes[i].y + nodes[i].height
+    if (rx > maxx) { maxx ::= rx }
+    if (ry > maxy) { maxy ::= ry }
+    i ::= i + 1
+  }
+  gmaxx := maxx + 2
+  gmaxy := maxy + 2
+  w := gmaxx + 1
+
+  out ::= @[]
+  e ::= 0
+  while (e < len(edges)) {
+    fi := node_index(nodes, edges[e].from_id)
+    ti := node_index(nodes, edges[e].to_id)
+    wpts ::= @[]
+    if (fi >= 0 and ti >= 0) {
+      fx := nodes[fi].x
+      fy := nodes[fi].y
+      fw := nodes[fi].width
+      fh := nodes[fi].height
+      tx := nodes[ti].x
+      ty := nodes[ti].y
+      tw := nodes[ti].width
+      th := nodes[ti].height
+
+      // exit (ex,ey): border cell on `from`; start (sx,sy): first free cell out.
+      // entry (enx,eny): border cell on `to`; goal (tgx,tgy): last free cell in.
+      ex ::= fx + fw / 2
+      ey ::= fy + fh - 1
+      sx ::= ex
+      sy ::= fy + fh
+      enx ::= tx + tw / 2
+      eny ::= ty
+      tgx ::= enx
+      tgy ::= ty - 1
+      if (dir == Direction.LR) {
+        ex ::= fx + fw - 1
+        ey ::= fy + fh / 2
+        sx ::= fx + fw
+        sy ::= ey
+        enx ::= tx
+        eny ::= ty + th / 2
+        tgx ::= tx - 1
+        tgy ::= eny
+      }
+
+      blocked := build_blocked(nodes, fi, ti, w)
+      mid := astar(blocked, sx, sy, tgx, tgy, gmaxx, gmaxy, w)
+
+      push(wpts, Point { x: ex, y: ey })
+      if (len(mid) > 0) {
+        m ::= 0
+        while (m < len(mid)) {
+          push(wpts, mid[m])
+          m ::= m + 1
+        }
+      } else {
+        push(wpts, Point { x: sx, y: sy })
+        push(wpts, Point { x: tgx, y: tgy })
+      }
+      push(wpts, Point { x: enx, y: eny })
+    }
+    routed := simplify(wpts)
+    push(out, RoutedEdge {
+      from_id: edges[e].from_id,
+      to_id: edges[e].to_id,
+      edge_type: edges[e].edge_type,
+      label: edges[e].label,
+      reversed: edges[e].reversed,
+      waypoints: routed,
+    })
+    e ::= e + 1
+  }
+  out
+}

@@ -14,6 +14,9 @@ pub mod graph;
     clippy::ptr_arg,
     clippy::redundant_closure,
     clippy::redundant_field_names,
+    clippy::single_match,
+    clippy::too_many_arguments,
+    clippy::unnecessary_mut_passed,
     clippy::unnecessary_to_owned,
     clippy::unused_unit,
     clippy::useless_conversion
@@ -24,6 +27,7 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/lexer.rs"));
     include!(concat!(env!("OUT_DIR"), "/parser.rs"));
     include!(concat!(env!("OUT_DIR"), "/layout.rs"));
+    include!(concat!(env!("OUT_DIR"), "/pathfinder.rs"));
 }
 pub use generated::parse_graph;
 pub use generated::{Direction, Edge, EdgeType, Graph, Node, NodeShape, Subgraph};
@@ -31,6 +35,7 @@ pub use generated::{
     DummyResult, LayoutNode, OrderedNode, assign_coords, insert_dummies, order_layers,
 };
 pub use generated::{LayoutEdge, NodeLayer, assign_layers, remove_cycles};
+pub use generated::{Point, RoutedEdge, route_edges};
 pub use generated::{Token, TokenKind, tokenize};
 
 #[cfg(feature = "wasm")]
