@@ -27,7 +27,7 @@ mod generated {
 }
 pub use generated::parse_graph;
 pub use generated::{Direction, Edge, EdgeType, Graph, Node, NodeShape, Subgraph};
-pub use generated::{LayoutEdge, remove_cycles};
+pub use generated::{LayoutEdge, NodeLayer, assign_layers, remove_cycles};
 pub use generated::{Token, TokenKind, tokenize};
 
 #[cfg(feature = "wasm")]

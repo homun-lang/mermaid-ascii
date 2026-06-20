@@ -203,3 +203,17 @@ fn parse_graph_unsupported_direction() {
     let graph = parse_graph(tokens);
     assert_eq!(graph.direction, Direction::TD);
 }
+
+#[test]
+fn assign_layers_simple_chain() {
+    use mermaid_ascii::{assign_layers, parse_graph, remove_cycles, tokenize};
+    // simple.mm.md: A --> B --> C  ⇒  layers 0 / 1 / 2
+    let tokens = tokenize("graph TD\n    A --> B --> C\n".to_string());
+    let graph = parse_graph(tokens);
+    let dag = remove_cycles(graph.clone());
+    let layers = assign_layers(graph.nodes.clone(), dag);
+    let layer_of = |id: &str| layers.iter().find(|nl| nl.id == id).unwrap().layer;
+    assert_eq!(layer_of("A"), 0);
+    assert_eq!(layer_of("B"), 1);
+    assert_eq!(layer_of("C"), 2);
+}

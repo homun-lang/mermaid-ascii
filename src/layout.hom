@@ -16,6 +16,12 @@ LayoutEdge := struct {
   reversed: bool,
 }
 
+@derive(Clone, Debug, PartialEq)
+NodeLayer := struct {
+  id: str,
+  layer: int,
+}
+
 // Position of `id` in `lst`, or -1. (Local linear scan — std index_of/reversed
 // take slices but this homunc version emits owned-value calls for them.)
 pos_of := (lst: @[str], id: str) -> int {
@@ -182,6 +188,52 @@ remove_cycles := (graph: Graph) -> @[LayoutEdge] {
       push(out, LayoutEdge { from_id: b, to_id: a, edge_type: et, label: lbl, reversed: true })
     }
     i ::= i + 1
+  }
+  out
+}
+
+// Layout stage 2: layer (rank) assignment via longest-path on the DAG.
+//
+// `edges` must already be acyclic (the output of remove_cycles). Each node's
+// layer is the length of the longest path from a source (no incoming DAG edge)
+// to it: sources get 0, and layer(v) = max(layer(u) + 1) over DAG edges u->v.
+// Relaxing every edge repeatedly reaches a fixed point in at most |nodes| passes
+// (longest acyclic path length), independent of edge order.
+assign_layers := (nodes: @[Node], edges: @[LayoutEdge]) -> @[NodeLayer] {
+  ids ::= @[]
+  layers ::= @[]
+  i ::= 0
+  while (i < len(nodes)) {
+    push(ids, nodes[i].id)
+    push(layers, 0)
+    i ::= i + 1
+  }
+
+  changed ::= true
+  passes ::= 0
+  while (changed and passes <= len(nodes)) {
+    changed ::= false
+    j ::= 0
+    while (j < len(edges)) {
+      pf := pos_of(ids, edges[j].from_id)
+      pt := pos_of(ids, edges[j].to_id)
+      if (pf >= 0 and pt >= 0) {
+        cand := layers[pf] + 1
+        if (cand > layers[pt]) {
+          layers[pt] := cand
+          changed ::= true
+        }
+      }
+      j ::= j + 1
+    }
+    passes ::= passes + 1
+  }
+
+  out ::= @[]
+  k ::= 0
+  while (k < len(nodes)) {
+    push(out, NodeLayer { id: ids[k], layer: layers[k] })
+    k ::= k + 1
   }
   out
 }
