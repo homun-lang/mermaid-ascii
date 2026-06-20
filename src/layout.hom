@@ -514,24 +514,81 @@ box_height := (o: OrderedNode) -> int {
 }
 
 // Assign grid coordinates + sizes, producing the LayoutNode list. `dir` selects
-// which axis the layers run along (TD: down, LR: across). Pitch is uniform across
-// the diagram (widest box + gap), keeping every box in its own cell.
+// which axis the layers run along (TD: down, LR: across). Layers and orders are
+// packed CUMULATIVELY: each layer/order slot is offset by the running sum of the
+// preceding slots' max box size plus a fixed gap. This keeps the visual gap between
+// adjacent layers constant even when boxes differ in size (a uniform per-cell pitch
+// would leave wider gaps around the narrower boxes). The gap reserves room for the
+// edge path drawn between layers: a vertical run renders as │ │ ▼ (3 cells), a
+// horizontal run as ─ ─ ─ ► (4 cells), so the layer gap is 3 for TD and 4 for LR.
 assign_coords := (ordered: @[OrderedNode], nodes: @[Node], dir: Direction) -> @[LayoutNode] {
-  maxw ::= 1
-  maxh ::= 1
+  // Highest layer / order index present (slots run 0..=max).
+  maxlayer ::= 0
+  maxorder ::= 0
+  i ::= 0
+  while (i < len(ordered)) {
+    if (ordered[i].layer > maxlayer) { maxlayer ::= ordered[i].layer }
+    if (ordered[i].order > maxorder) { maxorder ::= ordered[i].order }
+    i ::= i + 1
+  }
+
+  // Max box thickness per layer (along the layer axis) and per order (along the
+  // order axis). Boxes keep their drawn width/height regardless of direction; TD
+  // runs layers along y (height) and orders along x (width), LR swaps the axes.
+  layer_sz ::= @[]
+  l ::= 0
+  while (l <= maxlayer) {
+    push(layer_sz, 1)
+    l ::= l + 1
+  }
+  order_sz ::= @[]
+  o ::= 0
+  while (o <= maxorder) {
+    push(order_sz, 1)
+    o ::= o + 1
+  }
+
   i ::= 0
   while (i < len(ordered)) {
     w := box_width(nodes, ordered[i])
     h := box_height(ordered[i])
-    if (w > maxw) { maxw ::= w }
-    if (h > maxh) { maxh ::= h }
+    lay := ordered[i].layer
+    ord := ordered[i].order
+    laythick ::= h
+    ordthick ::= w
+    if (dir == Direction.LR) {
+      laythick ::= w
+      ordthick ::= h
+    }
+    if (laythick > layer_sz[lay]) { layer_sz[lay] := laythick }
+    if (ordthick > order_sz[ord]) { order_sz[ord] := ordthick }
     i ::= i + 1
   }
 
-  h_gap := 3
-  v_gap := 2
-  col_pitch := maxw + h_gap
-  row_pitch := maxh + v_gap
+  layer_gap ::= 3
+  order_gap ::= 4
+  if (dir == Direction.LR) {
+    layer_gap ::= 4
+    order_gap ::= 2
+  }
+
+  // Cumulative slot start positions along each axis.
+  layer_pos ::= @[]
+  acc ::= 0
+  l ::= 0
+  while (l <= maxlayer) {
+    push(layer_pos, acc)
+    acc ::= acc + layer_sz[l] + layer_gap
+    l ::= l + 1
+  }
+  order_pos ::= @[]
+  acc ::= 0
+  o ::= 0
+  while (o <= maxorder) {
+    push(order_pos, acc)
+    acc ::= acc + order_sz[o] + order_gap
+    o ::= o + 1
+  }
 
   out ::= @[]
   i ::= 0
@@ -540,16 +597,12 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], dir: Direction) -> @[
     h := box_height(ordered[i])
     ord := ordered[i].order
     lay := ordered[i].layer
-    // TD is the identity layout: order runs across (x), layers run down (y).
-    px ::= ord * col_pitch
-    py ::= lay * row_pitch
+    // TD: order runs across (x), layers run down (y). LR swaps the placement axes.
+    px ::= order_pos[ord]
+    py ::= layer_pos[lay]
     if (dir == Direction.LR) {
-      // LR transposes the grid before painting: layers run across (x), order
-      // stacks down (y). Only the placement axes swap — boxes keep their drawn
-      // width/height (label text is never rotated), so x stays on the
-      // width-based col_pitch and y on the height-based row_pitch.
-      px ::= lay * col_pitch
-      py ::= ord * row_pitch
+      px ::= layer_pos[lay]
+      py ::= order_pos[ord]
     }
     push(out, LayoutNode { id: ordered[i].id, x: px, y: py, width: w, height: h, is_dummy: ordered[i].is_dummy })
     i ::= i + 1

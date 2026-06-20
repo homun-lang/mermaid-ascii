@@ -157,8 +157,8 @@ charset_unicode := () -> CharSet {
     round_br: "╯",
     arrow_up: "▲",
     arrow_down: "▼",
-    arrow_left: "◀",
-    arrow_right: "▶",
+    arrow_left: "◄",
+    arrow_right: "►",
   }
 }
 
