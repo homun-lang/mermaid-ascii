@@ -1,0 +1,20 @@
+@derive(Clone, Debug, PartialEq)
+Direction := enum { TD, LR }
+
+@derive(Clone, Debug, PartialEq)
+NodeShape := enum { Rectangle, Rounded, Diamond, Circle }
+
+@derive(Clone, Debug, PartialEq)
+EdgeType := enum { Arrow, Line, DottedArrow, DottedLine, ThickArrow, ThickLine, BidirArrow }
+
+@derive(Clone, Debug, PartialEq)
+Node := struct { id: str, label: str, shape: NodeShape }
+
+@derive(Clone, Debug, PartialEq)
+Edge := struct { from_id: str, to_id: str, edge_type: EdgeType, label: str }
+
+@derive(Clone, Debug, PartialEq)
+Subgraph := struct { id: str, label: str, nodes: @[Node], edges: @[Edge] }
+
+@derive(Clone, Debug, PartialEq)
+Graph := struct { nodes: @[Node], edges: @[Edge], subgraphs: @[Subgraph], direction: Direction }
