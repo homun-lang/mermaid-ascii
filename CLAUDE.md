@@ -184,7 +184,7 @@ bash examples/gen.sh --check    # Verify against golden files
 ## Mermaid Syntax Supported
 
 ```mermaid
-graph TD           %% or: flowchart LR / graph BT / etc.
+graph TD           %% or: flowchart LR  (only TD and LR are supported)
     A[Rectangle]   %% id + shape bracket = node definition
     B(Rounded)
     C{Diamond}

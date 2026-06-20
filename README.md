@@ -50,7 +50,7 @@ Arguments:
 
 Options:
   -a, --ascii            Use plain ASCII characters instead of Unicode
-  -d, --direction <DIR>  Override graph direction (LR, RL, TD, BT)
+  -d, --direction <DIR>  Override graph direction (TD, LR)
   -p, --padding <N>      Node padding [default: 1]
   -o, --output <FILE>    Write output to file instead of stdout
 ```
@@ -109,8 +109,6 @@ Standard [Mermaid flowchart](https://mermaid.js.org/syntax/flowchart.html) synta
 ```
 graph TD        %% top-down (default)
 flowchart LR    %% left-to-right
-graph BT        %% bottom-to-top
-graph RL        %% right-to-left
 ```
 
 ### Nodes
@@ -294,7 +292,7 @@ Multi-phase compiler pipeline. Each phase transforms one representation to the n
 
   ASCII Render Phases:
 
-  1. Direction transform (transpose for LR/RL)
+  1. Direction transform (transpose for LR)
   2. Paint compound/subgraph borders
   3. Paint node boxes (shape-aware: ┌┐└┘ ╭╮╰╯ /\ ())
   4. Paint edges (solid ─│, dotted ╌╎, thick ═║)
@@ -302,7 +300,6 @@ Multi-phase compiler pipeline. Each phase transforms one representation to the n
      - Interior segments use standard line chars
   5. Paint arrowheads (► ◄ ▼ ▲) outside boxes + edge labels
   6. Paint exit stubs (┬ ┴ ├ ┤) on source node borders
-  7. Direction flip (BT→vertical, RL→horizontal)
 ```
 
 ### Module Map
@@ -350,7 +347,7 @@ Graph {
     nodes:       Node[]          # all declared nodes
     edges:       Edge[]          # all declared edges
     subgraphs:   Subgraph[]      # nested subgraph blocks
-    direction:   Direction        # TD | BT | LR | RL
+    direction:   Direction        # TD | LR
 }
 
 Node {
@@ -442,9 +439,7 @@ Edge painting:
   - Label placed at midpoint waypoint, one row above
 
 Direction transforms:
-  - LR/RL: transpose x↔y and width↔height before painting
-  - BT: flip vertical after painting (reverse rows, remap ▼↔▲ etc.)
-  - RL: flip horizontal after painting (reverse cols, remap ►↔◄ etc.)
+  - LR: transpose x↔y and width↔height before painting
 
 Sentinel values for min/max:
   - Use language maximum (sys.maxsize / i64::MAX), not arbitrary constants

@@ -1,2 +1,0 @@
-graph BT
-    A --> B --> C
