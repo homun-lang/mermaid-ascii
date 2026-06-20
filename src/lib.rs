@@ -36,7 +36,8 @@
     clippy::needless_borrow,
     clippy::op_ref,
     clippy::iter_overeager_cloned,
-    clippy::unnecessary_mut_passed
+    clippy::unnecessary_mut_passed,
+    clippy::let_and_return
 )]
 
 #[cfg(feature = "wasm")]
@@ -1004,7 +1005,7 @@ fn route_edges_rust(
         let entry_y = graph::nll_get_y(nodes.clone(), to_idx) - 1;
 
         let mut path = pathfinder::a_star(&mut grid, exit_x, exit_y, entry_x, entry_y);
-        let plen = graph::point_list_len(&path);
+        let plen = path.len() as i32;
 
         let mut waypoints = if plen > 0 {
             pathfinder::simplify_path(&mut path)

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.18 — 2026-05-15 — Drop low-level Rust wrappers
+
+- Delete `src/graph/grid_data.rs`: `OccupancyGrid.data` switches to `@[bool]`, grid constructor inlined into `pathfinder.hom`
+- Delete `src/graph/path_state.rs`: `pos_to_key` / `key_to_x` / `key_to_y` / `key_to_str` / `str_to_key` and `cost_data_new` ported into `pathfinder.hom`; `PointList` becomes `@[(int, int)]` inline
+- Drop `IntList` / `EdgePairList` / `StrList` struct wrappers + their 16 helper functions from `layout_state.rs`
+- `layout.hom` now uses native `@[int]` / `@[(str, str)]` / `@[str]` with `push` / `len` / index / index-assign; new `contains_pair` .hom helper replaces `edge_pair_list_contains`
+- Net −552 / +197 lines of hand-written Rust across 7 files
+
 ## v0.17 — homunc v0.87 syntax upgrade
 
 - Fix runtime deduplication in `build.rs`: key by function name (not full signature) so new `chars` module predicates (`is_alpha`, `is_digit`, `is_alnum`, `is_upper`) don't duplicate old stdlib versions
