@@ -165,8 +165,10 @@ fn parse_graph_td() {
     let tokens = tokenize("graph TD\n    A --> B\n".to_string());
     let graph = parse_graph(tokens);
     assert_eq!(graph.direction, Direction::TD);
-    assert!(graph.nodes.is_empty());
-    assert!(graph.edges.is_empty());
+    assert_eq!(graph.nodes.len(), 2);
+    assert_eq!(graph.edges.len(), 1);
+    assert_eq!(graph.edges[0].from_id, "A");
+    assert_eq!(graph.edges[0].to_id, "B");
     assert!(graph.subgraphs.is_empty());
 }
 

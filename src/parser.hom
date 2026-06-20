@@ -1,8 +1,89 @@
 use std
 
+is_open_token := (kind: TokenKind) -> bool {
+  kind == TokenKind.BracketOpen or kind == TokenKind.ParenOpen or kind == TokenKind.BraceOpen or kind == TokenKind.DoubleParenOpen
+}
+
+is_close_token := (kind: TokenKind) -> bool {
+  kind == TokenKind.BracketClose or kind == TokenKind.ParenClose or kind == TokenKind.BraceClose or kind == TokenKind.DoubleParenClose
+}
+
+shape_for_open := (kind: TokenKind) -> NodeShape {
+  if (kind == TokenKind.ParenOpen) { => NodeShape.Rounded }
+  if (kind == TokenKind.BraceOpen) { => NodeShape.Diamond }
+  if (kind == TokenKind.DoubleParenOpen) { => NodeShape.Circle }
+  NodeShape.Rectangle
+}
+
+is_edge_token := (kind: TokenKind) -> bool {
+  kind == TokenKind.Arrow or kind == TokenKind.Line or kind == TokenKind.DottedArrow or kind == TokenKind.DottedLine or kind == TokenKind.ThickArrow or kind == TokenKind.ThickLine or kind == TokenKind.BidirArrow
+}
+
+edge_token_to_type := (kind: TokenKind) -> EdgeType {
+  if (kind == TokenKind.Line) { => EdgeType.Line }
+  if (kind == TokenKind.DottedArrow) { => EdgeType.DottedArrow }
+  if (kind == TokenKind.DottedLine) { => EdgeType.DottedLine }
+  if (kind == TokenKind.ThickArrow) { => EdgeType.ThickArrow }
+  if (kind == TokenKind.ThickLine) { => EdgeType.ThickLine }
+  if (kind == TokenKind.BidirArrow) { => EdgeType.BidirArrow }
+  EdgeType.Arrow
+}
+
+// Linear node lookup (NO id->index dict — only a couple of call sites; see ticket doc).
+find_node_index := (nodes: @[Node], id: str) -> int {
+  i ::= 0
+  while (i < len(nodes)) {
+    if (nodes[i].id == id) { => i }
+    i ::= i + 1
+  }
+  -1
+}
+
+// Functional: returns the (possibly extended/updated) node list.
+ensure_node := (nodes: @[Node], id: str, label: str, shape: NodeShape) -> @[Node] {
+  out ::= nodes
+  idx := find_node_index(out, id)
+  if (idx >= 0) {
+    if (label != id) {
+      out[idx].label := label
+      out[idx].shape := shape
+    }
+  } else {
+    push(out, Node { id: id, label: label, shape: shape })
+  }
+  out
+}
+
+// Parse a node starting at `pos` (an Ident). Returns (id, label, shape, end_pos).
+// Returns a tuple of plain values so callers destructure into clone-able locals.
+parse_node_at := (tokens: @[Token], pos: int) -> (str, str, NodeShape, int) {
+  id := tokens[pos].text
+  label ::= tokens[pos].text
+  shape ::= NodeShape.Rectangle
+  end ::= pos + 1
+  if (end < len(tokens) and is_open_token(tokens[end].kind)) {
+    shape ::= shape_for_open(tokens[end].kind)
+    end ::= end + 1
+    if (end < len(tokens) and tokens[end].kind == TokenKind.Label) {
+      label ::= tokens[end].text
+      end ::= end + 1
+    }
+    if (end < len(tokens) and is_close_token(tokens[end].kind)) {
+      end ::= end + 1
+    }
+  }
+  (id, label, shape, end)
+}
+
 parse_graph := (tokens: @[Token]) -> Graph {
   direction ::= Direction.TD
+  nodes ::= @[]
+  edges ::= @[]
+  subgraphs ::= @[]
+
   i ::= 0
+
+  // ── Header / direction ──────────────────────────────────────────────
   found ::= false
   while (i < len(tokens) and not found) {
     if (tokens[i].kind == TokenKind.Header) {
@@ -21,14 +102,72 @@ parse_graph := (tokens: @[Token]) -> Graph {
         }
         j ::= j + 1
       }
+      i ::= j
+    } else {
+      i ::= i + 1
     }
+  }
+
+  // ── Body: nodes + edges ─────────────────────────────────────────────
+  while (i < len(tokens)) {
+    k := tokens[i].kind
+
+    if (k == TokenKind.Newline) {
+      i ::= i + 1
+      continue
+    }
+    if (k == TokenKind.EndKw) {
+      i ::= i + 1
+      continue
+    }
+    // subgraph blocks are a separate ticket; skip the header line, keep members flat
+    if (k == TokenKind.SubgraphKw) {
+      i ::= i + 1
+      while (i < len(tokens) and tokens[i].kind != TokenKind.Newline) {
+        i ::= i + 1
+      }
+      continue
+    }
+
+    if (k == TokenKind.Ident) {
+      pid, plabel, pshape, pend := parse_node_at(tokens, i)
+      i ::= pend
+      nodes ::= ensure_node(nodes, pid, plabel, pshape)
+      prev ::= pid
+
+      while (i < len(tokens) and is_edge_token(tokens[i].kind)) {
+        et := edge_token_to_type(tokens[i].kind)
+        i ::= i + 1
+
+        elabel ::= str("")
+        if (i < len(tokens) and tokens[i].kind == TokenKind.Pipe) {
+          i ::= i + 1
+          while (i < len(tokens) and tokens[i].kind != TokenKind.Pipe) {
+            txt := tokens[i].text
+            elabel ::= "${elabel}${txt}"
+            i ::= i + 1
+          }
+          if (i < len(tokens) and tokens[i].kind == TokenKind.Pipe) {
+            i ::= i + 1
+          }
+        }
+
+        if (i < len(tokens) and tokens[i].kind == TokenKind.Ident) {
+          tid, tlabel, tshape, tend := parse_node_at(tokens, i)
+          i ::= tend
+          nodes ::= ensure_node(nodes, tid, tlabel, tshape)
+          from := prev
+          prev ::= tid
+          // Edge built last: homunc moves a value used in a struct literal, so this
+          // must be tid's final use (from/prev already captured above).
+          push(edges, Edge { from_id: from, to_id: tid, edge_type: et, label: elabel })
+        }
+      }
+      continue
+    }
+
     i ::= i + 1
   }
 
-  Graph {
-    nodes: @[],
-    edges: @[],
-    subgraphs: @[],
-    direction: direction
-  }
+  Graph { nodes: nodes, edges: edges, subgraphs: subgraphs, direction: direction }
 }
