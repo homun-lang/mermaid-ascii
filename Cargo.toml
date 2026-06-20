@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Mermaid flowchart syntax to ASCII/Unicode text renderer"
 authors = []
+build = "src/build.rs"
 
 [[bin]]
 name = "mermaid-ascii"
