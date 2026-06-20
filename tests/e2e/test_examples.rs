@@ -111,3 +111,50 @@ fn tokenize_subgraph() {
     assert!(tokens.iter().any(|t| t.kind == TokenKind::SubgraphKw));
     assert!(tokens.iter().any(|t| t.kind == TokenKind::EndKw));
 }
+
+#[test]
+fn tokenize_compact_arrow() {
+    use mermaid_ascii::{TokenKind, tokenize};
+    let tokens = tokenize("graph TD\n A-->B".to_string());
+    let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            &TokenKind::Header,
+            &TokenKind::DirTD,
+            &TokenKind::Newline,
+            &TokenKind::Ident,
+            &TokenKind::Arrow,
+            &TokenKind::Ident,
+        ]
+    );
+    assert_eq!(tokens[0].text, "graph");
+    assert_eq!(tokens[1].text, "TD");
+    assert_eq!(tokens[3].text, "A");
+    assert_eq!(tokens[4].text, "-->");
+    assert_eq!(tokens[5].text, "B");
+}
+
+#[test]
+fn tokenize_labeled_edge() {
+    use mermaid_ascii::{TokenKind, tokenize};
+    let tokens = tokenize("graph TD\n A-->|yes| B".to_string());
+    let kinds: Vec<_> = tokens.iter().map(|t| &t.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            &TokenKind::Header,
+            &TokenKind::DirTD,
+            &TokenKind::Newline,
+            &TokenKind::Ident,
+            &TokenKind::Arrow,
+            &TokenKind::Pipe,
+            &TokenKind::Ident,
+            &TokenKind::Pipe,
+            &TokenKind::Ident,
+        ]
+    );
+    assert_eq!(tokens[4].text, "-->");
+    assert_eq!(tokens[6].text, "yes");
+    assert_eq!(tokens[8].text, "B");
+}
