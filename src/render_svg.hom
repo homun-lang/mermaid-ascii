@@ -1,0 +1,89 @@
+use std
+
+// SVG renderer stage 1: emit the SVG element(s) for a single laid-out node.
+//
+// Layout produces a CHARACTER grid (LayoutNode.x/y in cells, width/height in
+// cells). The .expect.svg goldens use a PIXEL coordinate system that maps each
+// cell to a fixed box and offsets the whole drawing by a margin:
+//   px = MARGIN + cell_x * CELL_W      pw = cells_w * CELL_W
+//   py = MARGIN + cell_y * CELL_H      ph = cells_h * CELL_H
+// with CELL_W = 10, CELL_H = 20, MARGIN = 20 (reverse-engineered from the
+// goldens: e.g. an x=0,w=13 box becomes rect x="20" width="130").
+//
+// Each shape draws its frame then a centered <text> label at the box centre:
+//   Rectangle -> <rect ... rx="0">          Rounded -> <rect ... rx="15">
+//   Diamond   -> <polygon> (top/right/bottom/left points)
+//   Circle    -> <ellipse> (centre + rx/ry = half box)
+// Dummy nodes are routing bend points, not boxes, so they emit "".
+// LayoutNode lives in layout.hom; NodeShape in types.hom (same module).
+
+// ── cell-grid -> pixel transform ────────────────────────────────────────────
+svg_px := (x: int) -> int { 20 + x * 10 }
+svg_py := (y: int) -> int { 20 + y * 20 }
+svg_pw := (w: int) -> int { w * 10 }
+svg_ph := (h: int) -> int { h * 20 }
+
+// Centered label element. cx/cy are pixel coordinates of the box centre.
+svg_text := (cx: int, cy: int, label: str) -> str {
+  "<text x=\"${cx}\" y=\"${cy}\" dominant-baseline=\"central\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"14\">${label}</text>"
+}
+
+// Rect frame with corner radius rx (0 = sharp rectangle, 15 = rounded).
+svg_rect := (px: int, py: int, pw: int, ph: int, rx: int) -> str {
+  "<rect x=\"${px}\" y=\"${py}\" width=\"${pw}\" height=\"${ph}\" rx=\"${rx}\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/>"
+}
+
+// Diamond as a 4-point polygon: top, right, bottom, left.
+svg_diamond := (px: int, py: int, pw: int, ph: int) -> str {
+  half_w := pw / 2
+  half_h := ph / 2
+  cx := px + half_w
+  cy := py + half_h
+  right_x := px + pw
+  bot_y := py + ph
+  "<polygon points=\"${cx},${py} ${right_x},${cy} ${cx},${bot_y} ${px},${cy}\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/>"
+}
+
+// Circle as an ellipse: centre at the box centre, radii = half the box.
+svg_circle := (px: int, py: int, pw: int, ph: int) -> str {
+  half_w := pw / 2
+  half_h := ph / 2
+  cx := px + half_w
+  cy := py + half_h
+  "<ellipse cx=\"${cx}\" cy=\"${cy}\" rx=\"${half_w}\" ry=\"${half_h}\" fill=\"white\" stroke=\"black\" stroke-width=\"1.5\"/>"
+}
+
+// Emit the SVG for one laid-out node: the shape frame then its centered label,
+// joined by a newline. Dummy nodes emit "" (they carry no box). `shape` selects
+// the frame glyph kind; `label` is the visible text.
+svg_node := (n: LayoutNode, shape: NodeShape, label: str) -> str {
+  if (n.is_dummy) {
+    => str("")
+  }
+  px := svg_px(n.x)
+  py := svg_py(n.y)
+  pw := svg_pw(n.width)
+  ph := svg_ph(n.height)
+  half_w := pw / 2
+  half_h := ph / 2
+  cx := px + half_w
+  cy := py + half_h
+  label_el := svg_text(cx, cy, label)
+  frame ::= str("")
+  match shape {
+    NodeShape.Rectangle -> {
+      frame ::= svg_rect(px, py, pw, ph, 0)
+    }
+    NodeShape.Rounded -> {
+      frame ::= svg_rect(px, py, pw, ph, 15)
+    }
+    NodeShape.Diamond -> {
+      frame ::= svg_diamond(px, py, pw, ph)
+    }
+    NodeShape.Circle -> {
+      frame ::= svg_circle(px, py, pw, ph)
+    }
+  }
+  parts := @[frame, label_el]
+  join(parts, "\n")
+}
