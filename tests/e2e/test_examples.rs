@@ -219,6 +219,23 @@ fn assign_layers_simple_chain() {
 }
 
 #[test]
+fn assign_layers_diamond_ranks() {
+    use mermaid_ascii::{assign_layers, parse_graph, remove_cycles, tokenize};
+    // diamond.mm.md: A-->B, A-->C, B-->D, C-->D
+    // longest-path ranks: A=0, B=C=1 (one hop from A), D=2 (two hops via B or C).
+    let tokens =
+        tokenize("graph TD\n    A --> B\n    A --> C\n    B --> D\n    C --> D\n".to_string());
+    let graph = parse_graph(tokens);
+    let dag = remove_cycles(graph.clone());
+    let layers = assign_layers(graph.nodes.clone(), dag);
+    let layer_of = |id: &str| layers.iter().find(|nl| nl.id == id).unwrap().layer;
+    assert_eq!(layer_of("A"), 0);
+    assert_eq!(layer_of("B"), 1);
+    assert_eq!(layer_of("C"), 1);
+    assert_eq!(layer_of("D"), 2);
+}
+
+#[test]
 fn order_layers_diamond_no_overlap() {
     use mermaid_ascii::{
         assign_layers, insert_dummies, order_layers, parse_graph, remove_cycles, tokenize,
@@ -330,6 +347,53 @@ fn assign_coords_lr_fanout_horizontal() {
     let mut ys = [b.y, c.y, d.y];
     ys.sort();
     assert!(ys[0] < ys[1] && ys[1] < ys[2], "siblings stack along y");
+}
+
+// Map each node to its (column, row) grid rank: the index of its distinct x among
+// all distinct x values, and likewise its y among distinct y values. This collapses
+// the absolute pixel pitch to integer grid cells, so two layouts can be compared
+// structurally regardless of box sizes.
+fn grid_ranks(nodes: &[mermaid_ascii::LayoutNode]) -> Vec<(String, usize, usize)> {
+    let mut xs: Vec<i32> = nodes.iter().map(|n| n.x).collect();
+    xs.sort_unstable();
+    xs.dedup();
+    let mut ys: Vec<i32> = nodes.iter().map(|n| n.y).collect();
+    ys.sort_unstable();
+    ys.dedup();
+    nodes
+        .iter()
+        .map(|n| {
+            let col = xs.iter().position(|x| *x == n.x).unwrap();
+            let row = ys.iter().position(|y| *y == n.y).unwrap();
+            (n.id.clone(), col, row)
+        })
+        .collect()
+}
+
+#[test]
+fn lr_transposes_td_layout() {
+    // The same graph laid out TD and LR must be grid transposes of each other:
+    // a node at TD cell (col, row) lands at LR cell (row, col). TD runs layers
+    // down / order across; LR swaps those axes (layout.hom assign_coords).
+    let edges = "    A --> B\n    A --> C\n    B --> D\n    C --> D\n";
+    let td = grid_ranks(&coords_for(&format!("graph TD\n{edges}")));
+    let lr = grid_ranks(&coords_for(&format!("flowchart LR\n{edges}")));
+    assert_eq!(td.len(), lr.len());
+    for (id, tcol, trow) in &td {
+        let (_, lcol, lrow) = lr.iter().find(|(lid, _, _)| lid == id).unwrap();
+        assert_eq!(
+            (*lcol, *lrow),
+            (*trow, *tcol),
+            "node {id}: LR grid cell should be the transpose of its TD cell"
+        );
+    }
+    // Sanity: the transpose is non-trivial (B and C actually move off the diagonal).
+    let b = td.iter().find(|(id, _, _)| id == "B").unwrap();
+    assert_ne!(
+        (b.1, b.2),
+        (b.2, b.1),
+        "diamond TD layout must be off-diagonal"
+    );
 }
 
 // Full layout through routing: returns (laid-out nodes, routed edges).
