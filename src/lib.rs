@@ -1,3 +1,5 @@
+pub mod graph;
+
 #[allow(
     dead_code,
     unused_imports,
