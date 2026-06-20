@@ -922,9 +922,22 @@ fn golden_svg_examples() {
             assert_eq!(got, want, "golden svg mismatch for {stem}");
             checked += 1;
         } else {
-            // SVG renderer for this example is still WIP: only require the binary to
-            // run and produce non-empty output (full golden diff comes later).
-            assert!(!got.is_empty(), "binary produced no svg output for {stem}");
+            // SVG renderer for this example is still WIP: don't pin the exact bytes
+            // yet, but require structurally well-formed SVG (full golden diff comes
+            // later as each case's renderer is locked into GOLDEN_SVG_PASSING).
+            let trimmed = got.trim();
+            assert!(
+                trimmed.starts_with("<svg") || trimmed.starts_with("<?xml"),
+                "svg output for {stem} does not start with an <svg> root"
+            );
+            assert!(
+                trimmed.ends_with("</svg>"),
+                "svg output for {stem} is not closed with </svg>"
+            );
+            assert!(
+                got.contains("xmlns=\"http://www.w3.org/2000/svg\""),
+                "svg output for {stem} missing svg xmlns declaration"
+            );
         }
     }
 
