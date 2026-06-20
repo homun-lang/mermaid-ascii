@@ -4,6 +4,7 @@ pub mod graph;
     dead_code,
     unused_imports,
     unused_macros,
+    unused_assignments,
     unused_mut,
     unused_variables,
     clippy::assign_op_pattern,
@@ -30,6 +31,7 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/pathfinder.rs"));
     include!(concat!(env!("OUT_DIR"), "/canvas.rs"));
     include!(concat!(env!("OUT_DIR"), "/render_ascii.rs"));
+    include!(concat!(env!("OUT_DIR"), "/render_svg.rs"));
 }
 pub use generated::parse_graph;
 pub use generated::{
@@ -43,6 +45,7 @@ pub use generated::{
 pub use generated::{LayoutEdge, NodeLayer, assign_layers, remove_cycles};
 pub use generated::{Point, RoutedEdge, route_edges};
 pub use generated::{Token, TokenKind, tokenize};
+pub use generated::{svg_edge, svg_node};
 
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
@@ -54,6 +57,15 @@ pub fn render_dsl(text: &str, ascii: bool, direction: Option<Direction>) -> Stri
         graph.direction = dir;
     }
     render(&graph, ascii)
+}
+
+pub fn render_dsl_svg(text: &str, direction: Option<Direction>) -> String {
+    let tokens = tokenize(text.to_string());
+    let mut graph = parse_graph(tokens);
+    if let Some(dir) = direction {
+        graph.direction = dir;
+    }
+    render_svg_doc(&graph)
 }
 
 // Shape of node `id` (defaults to Rectangle if not found — e.g. dummies, which are
@@ -144,6 +156,106 @@ fn render(graph: &Graph, ascii: bool) -> String {
         out.push('\n');
     }
     out
+}
+
+// Pull a routed polyline's two endpoints in by one cell toward their neighbors. The
+// layout's waypoints touch the source/target box borders; the SVG line should stop one
+// cell short at each end (the gap the ASCII paint_edge leaves for stubs/arrowheads), so
+// the arrowhead marker sits in the gap rather than under the box border.
+fn trim_edge(mut e: RoutedEdge) -> RoutedEdge {
+    let n = e.waypoints.len();
+    if n >= 2 {
+        let first = step_in(&e.waypoints[0], &e.waypoints[1]);
+        let last = step_in(&e.waypoints[n - 1], &e.waypoints[n - 2]);
+        e.waypoints[0] = first;
+        e.waypoints[n - 1] = last;
+    }
+    e
+}
+
+// One cell step from `p` toward `toward` (orthogonal segments only move one axis). Left
+// unchanged when the segment is a single cell, so endpoints never cross their neighbor.
+fn step_in(p: &Point, toward: &Point) -> Point {
+    let dx = toward.x - p.x;
+    let dy = toward.y - p.y;
+    if dx.abs() + dy.abs() >= 2 {
+        Point {
+            x: p.x + dx.signum(),
+            y: p.y + dy.signum(),
+        }
+    } else {
+        Point { x: p.x, y: p.y }
+    }
+}
+
+// Full SVG render: lay the graph out (Sugiyama → coords → routing) into the shared
+// graphIR, then emit one SVG document. Cell-grid coords map to pixels via the same
+// transform the .hom svg_* helpers use (MARGIN=20, CELL_W=10, CELL_H=20); the document
+// width/height pad the cell bounding box by one cell on every side before scaling.
+// Edges are drawn before nodes so node boxes paint on top.
+fn render_svg_doc(graph: &Graph) -> String {
+    let dir = graph.direction.clone();
+
+    // Layout pipeline → graphIR (LayoutNode[] + RoutedEdge[]).
+    let dag = remove_cycles(graph.clone());
+    let layers = assign_layers(graph.nodes.clone(), dag.clone());
+    let expanded = insert_dummies(layers, dag);
+    let ordered = order_layers(expanded.nodes, expanded.edges.clone());
+    let nodes = assign_coords(ordered, graph.nodes.clone(), dir.clone());
+    let routed = route_edges(nodes.clone(), expanded.edges, dir);
+
+    // Cell bounding box of every box plus every routed waypoint (same as render()).
+    let mut w: i32 = 1;
+    let mut h: i32 = 1;
+    for n in &nodes {
+        if n.x + n.width > w {
+            w = n.x + n.width;
+        }
+        if n.y + n.height > h {
+            h = n.y + n.height;
+        }
+    }
+    for e in &routed {
+        for p in &e.waypoints {
+            if p.x + 1 > w {
+                w = p.x + 1;
+            }
+            if p.y + 1 > h {
+                h = p.y + 1;
+            }
+        }
+    }
+
+    // Document size in pixels: pad the cell box by one cell each side, scale, then add
+    // the 20px margin on each side (2*MARGIN). Reverse-engineered from the goldens.
+    let pw = 2 * 20 + (w + 2) * 10;
+    let ph = 2 * 20 + (h + 2) * 20;
+
+    let mut lines: Vec<String> = Vec::new();
+    lines.push(format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw}\" height=\"{ph}\" viewBox=\"0 0 {pw} {ph}\">"
+    ));
+    lines.push(
+        "<defs>\n  <marker id=\"arrowhead\" markerWidth=\"10\" markerHeight=\"7\" refX=\"10\" refY=\"3.5\" orient=\"auto\">\n    <polygon points=\"0 0, 10 3.5, 0 7\" fill=\"black\"/>\n  </marker>\n  <marker id=\"arrowhead-rev\" markerWidth=\"10\" markerHeight=\"7\" refX=\"0\" refY=\"3.5\" orient=\"auto\">\n    <polygon points=\"10 0, 0 3.5, 10 7\" fill=\"black\"/>\n  </marker>\n</defs>".to_string(),
+    );
+    lines.push(format!(
+        "<rect width=\"{pw}\" height=\"{ph}\" fill=\"white\"/>"
+    ));
+
+    for e in routed {
+        lines.push(svg_edge(trim_edge(e)));
+    }
+    for n in &nodes {
+        let shape = shape_of(graph, &n.id);
+        let label = label_of(graph, &n.id);
+        let s = svg_node(n.clone(), shape, label);
+        if !s.is_empty() {
+            lines.push(s);
+        }
+    }
+    lines.push("</svg>".to_string());
+
+    lines.join("\n")
 }
 
 #[cfg(feature = "wasm")]

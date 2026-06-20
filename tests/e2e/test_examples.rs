@@ -871,3 +871,66 @@ fn golden_txt_examples() {
         "expected every passing golden txt case to be checked"
     );
 }
+
+// Example stems whose --svg output currently matches their .expect.svg exactly.
+const GOLDEN_SVG_PASSING: &[&str] = &["simple", "lr_simple"];
+
+// Run the CLI binary with --svg on `input_path` and return its stdout as a String.
+fn run_binary_svg(input_path: &str) -> String {
+    use std::process::Command;
+    let bin = env!("CARGO_BIN_EXE_mermaid-ascii");
+    let out = Command::new(bin)
+        .arg("--svg")
+        .arg(input_path)
+        .output()
+        .expect("failed to run mermaid-ascii binary");
+    assert!(
+        out.status.success(),
+        "binary exited with failure on {input_path}"
+    );
+    String::from_utf8(out.stdout).expect("binary output not utf-8")
+}
+
+#[test]
+fn golden_svg_examples() {
+    use std::path::Path;
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/_site/examples");
+
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .expect("read examples dir")
+        .map(|e| e.expect("dir entry").path())
+        .collect();
+    entries.sort();
+
+    let mut checked = 0;
+    for path in entries {
+        let name = path.file_name().unwrap().to_str().unwrap().to_string();
+        let stem = match name.strip_suffix(".mm.md") {
+            Some(s) => s,
+            None => continue,
+        };
+        let input = path.to_str().unwrap();
+        let got = run_binary_svg(input);
+
+        let expect_path = format!("{dir}/{stem}.expect.svg");
+        if !Path::new(&expect_path).exists() {
+            continue;
+        }
+
+        if GOLDEN_SVG_PASSING.contains(&stem) {
+            let want = std::fs::read_to_string(&expect_path).expect("read expect.svg");
+            assert_eq!(got, want, "golden svg mismatch for {stem}");
+            checked += 1;
+        } else {
+            // SVG renderer for this example is still WIP: only require the binary to
+            // run and produce non-empty output (full golden diff comes later).
+            assert!(!got.is_empty(), "binary produced no svg output for {stem}");
+        }
+    }
+
+    assert_eq!(
+        checked,
+        GOLDEN_SVG_PASSING.len(),
+        "expected every passing golden svg case to be checked"
+    );
+}

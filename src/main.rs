@@ -48,7 +48,11 @@ fn main() {
         _ => None,
     });
 
-    let result = mermaid_ascii::render_dsl(&text, cli.ascii, direction);
+    let result = if cli.svg {
+        mermaid_ascii::render_dsl_svg(&text, direction)
+    } else {
+        mermaid_ascii::render_dsl(&text, cli.ascii, direction)
+    };
 
     match &cli.output {
         Some(path) => std::fs::write(path, &result).expect("could not write output file"),
