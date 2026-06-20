@@ -1,0 +1,35 @@
+*.patch
+Cargo.lock
+
+out/
+*.log
+_ref/
+
+# Generated .rs from homunc (build.rs compiles .hom → .rs at build time)
+# Do NOT commit these — they are build artifacts
+src/types.rs
+src/config.rs
+src/layout_types.rs
+src/parser.rs
+src/layout.rs
+src/pathfinder.rs
+src/charset.rs
+src/canvas.rs
+src/render.rs
+
+.tmp/
+
+# Rust build artifacts
+target/
+pkg/
+_site/*.wasm
+_site/*.js
+_site/version.txt
+!_site/index.html
+*.svg
+
+.claude/
+.claude
+.tmp/
+
+*.out.txt

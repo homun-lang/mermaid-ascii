@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en" class="h-full overflow-hidden">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Mermaid ASCII</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<script>
+			tailwind.config = {
+				theme: {
+					extend: {
+						colors: {
+							bg: '#0d1117',
+							panel: '#161b22',
+							bdr: '#30363d',
+							ctrl: '#21262d',
+							hi: '#58a6ff',
+							err: '#f85149',
+							ok: '#238636',
+							okb: '#2ea043'
+						},
+						fontFamily: {
+							mono: ['"JetBrains Mono"', '"Fira Code"', '"Cascadia Code"', 'monospace']
+						}
+					}
+				}
+			};
+		</script>
+		<style>
+			textarea:focus {
+				outline: none;
+			}
+			::-webkit-scrollbar {
+				width: 6px;
+				height: 6px;
+			}
+			::-webkit-scrollbar-track {
+				background: transparent;
+			}
+			::-webkit-scrollbar-thumb {
+				background: #30363d;
+				border-radius: 3px;
+			}
+		</style>
+	</head>
+	<body class="bg-bg flex h-full flex-col overflow-hidden font-sans text-[#c9d1d9]">
+		<header class="bg-panel border-bdr flex shrink-0 items-center gap-4 border-b px-5 py-3">
+			<h1 class="text-lg font-semibold">Mermaid ASCII</h1>
+			<span id="status" class="text-xs text-[#8b949e] italic">Loading WASM...</span>
+			<a
+				class="hover:text-hi ml-auto flex items-center gap-1.5 text-[13px] text-[#8b949e] no-underline transition-colors"
+				href="https://github.com/homun-lang/mermaid-ascii"
+				target="_blank"
+				rel="noopener"
+			>
+				<svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor">
+					<path
+						d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"
+					/>
+				</svg>
+				https://github.com/homun-lang/mermaid-ascii
+			</a>
+			<select id="examples" class="bg-ctrl border-bdr rounded-md border px-3 py-1 text-[13px] text-[#c9d1d9]">
+				<option value="">— examples —</option>
+				<option value="simple">simple</option>
+				<option value="flowchart">flowchart</option>
+				<option value="pipeline">pipeline</option>
+				<option value="diamond">diamond</option>
+				<option value="shapes">shapes</option>
+				<option value="edges">edges</option>
+				<option value="subgraph">subgraph</option>
+				<option value="architecture">architecture</option>
+				<option value="multiline">multiline</option>
+				<option value="lr_simple">lr_simple</option>
+				<option value="lr_fanout">lr_fanout</option>
+				<option value="bt_simple">bt_simple</option>
+			</select>
+			<div class="flex items-center gap-2.5">
+				<label class="text-[13px] text-[#8b949e]"
+					>Padding
+					<input
+						type="number"
+						id="padding"
+						value="1"
+						min="0"
+						max="4"
+						class="bg-ctrl border-bdr w-[50px] rounded-md border px-2 py-1 text-[13px] text-[#c9d1d9]"
+					/>
+				</label>
+				<label class="text-[13px] text-[#8b949e]"
+					><input type="checkbox" id="unicode" checked class="accent-hi" /> Unicode</label
+				>
+			</div>
+		</header>
+
+		<div class="flex min-h-0 flex-1 overflow-hidden">
+			<div class="flex h-full min-w-0 flex-col overflow-hidden" id="left" style="flex: 1 1 50%">
+				<div
+					class="bg-panel border-bdr flex h-9 shrink-0 items-center border-b px-4 text-[13px] font-semibold text-[#8b949e]"
+				>
+					Mermaid Input
+				</div>
+        <!-- prettier-ignore -->
+        <textarea
+					id="input"
+					spellcheck="false"
+					class="bg-bg min-h-0 flex-1 resize-none overflow-auto border-none p-4 font-mono text-sm leading-normal text-[#c9d1d9]"
+				>
+graph TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[OK]
+    B -->|No| D[Cancel]
+    C --> E((End))
+    D --> E</textarea
+				>
+			</div>
+			<div
+				id="divider"
+				class="bg-bdr hover:bg-hi w-1.5 shrink-0 cursor-col-resize self-stretch transition-colors"
+			></div>
+			<div class="flex h-full min-w-0 flex-col overflow-hidden" id="right" style="flex: 1 1 50%">
+				<div
+					class="bg-panel border-bdr flex h-9 shrink-0 items-center justify-between border-b px-4 text-[13px] font-semibold text-[#8b949e]"
+				>
+					<div class="flex gap-1.5">
+						<button
+							id="mode-ascii"
+							onclick="setMode('ascii')"
+							class="bg-hi cursor-pointer rounded-md border border-transparent px-3 py-1 text-xs text-white transition-colors"
+						>
+							ASCII
+						</button>
+						<button
+							id="mode-svg"
+							onclick="setMode('svg')"
+							class="bg-ctrl border-bdr hover:bg-bdr cursor-pointer rounded-md border px-3 py-1 text-xs text-[#c9d1d9] transition-colors"
+						>
+							SVG
+						</button>
+					</div>
+					<button
+						id="action-btn"
+						onclick="doAction()"
+						class="bg-ctrl border-bdr hover:bg-bdr cursor-pointer rounded-md border px-3 py-1 text-xs text-[#c9d1d9] transition-colors"
+					>
+						Copy
+					</button>
+				</div>
+				<pre
+					id="output"
+					class="bg-bg m-0 min-h-0 flex-1 overflow-auto p-4 font-mono text-sm leading-snug whitespace-pre"
+				></pre>
+				<div
+					id="svg-output"
+					class="bg-bg hidden min-h-0 flex-1 overflow-auto p-4"
+				></div>
+			</div>
+		</div>
+
+		<script type="module">
+			import init, { renderWithOptions, renderSvg } from './mermaid_ascii.js';
+
+			const $ = (id) => document.getElementById(id);
+			const input = $('input'),
+				output = $('output'),
+				svgOutput = $('svg-output'),
+				status = $('status');
+			const padding = $('padding'),
+				unicode = $('unicode');
+			const left = $('left'),
+				right = $('right'),
+				divider = $('divider');
+			const actionBtn = $('action-btn'),
+				modeAscii = $('mode-ascii'),
+				modeSvg = $('mode-svg');
+			let ready = false,
+				mode = 'ascii',
+				lastSvg = '';
+
+			const activeBtn = 'bg-hi cursor-pointer rounded-md border border-transparent px-3 py-1 text-xs text-white transition-colors';
+			const inactiveBtn = 'bg-ctrl border-bdr hover:bg-bdr cursor-pointer rounded-md border px-3 py-1 text-xs text-[#c9d1d9] transition-colors';
+
+			async function load() {
+				try {
+					const [, verResp] = await Promise.all([
+						init(),
+						fetch('version.txt').catch(() => null)
+					]);
+					ready = true;
+					const ver = (verResp && verResp.ok) ? (await verResp.text()).trim() : '';
+					status.textContent = ver ? `mermaid-ascii ${ver}` : 'Ready';
+					status.style.fontStyle = 'normal';
+					doRender();
+				} catch (e) {
+					status.textContent = 'Failed to load WASM';
+					status.classList.add('text-err');
+					console.error(e);
+				}
+			}
+
+			function doRender() {
+				if (!ready) return;
+				const src = input.value.trim();
+				if (!src) {
+					output.textContent = '';
+					svgOutput.innerHTML = '';
+					lastSvg = '';
+					return;
+				}
+				try {
+					if (mode === 'ascii') {
+						output.textContent = renderWithOptions(src, unicode.checked, +padding.value || 1, '');
+						output.classList.remove('text-err');
+					} else {
+						lastSvg = renderSvg(src, +padding.value || 1, '');
+						svgOutput.innerHTML = lastSvg;
+						svgOutput.classList.remove('text-err');
+					}
+				} catch (e) {
+					const msg = e.message || String(e);
+					if (mode === 'ascii') {
+						output.textContent = msg;
+						output.classList.add('text-err');
+					} else {
+						svgOutput.innerHTML = `<span class="text-err">${msg}</span>`;
+					}
+				}
+			}
+
+			window.setMode = (m) => {
+				mode = m;
+				if (m === 'ascii') {
+					modeAscii.className = activeBtn;
+					modeSvg.className = inactiveBtn;
+					output.classList.remove('hidden');
+					svgOutput.classList.add('hidden');
+					actionBtn.textContent = 'Copy';
+				} else {
+					modeSvg.className = activeBtn;
+					modeAscii.className = inactiveBtn;
+					output.classList.add('hidden');
+					svgOutput.classList.remove('hidden');
+					actionBtn.textContent = 'Download';
+				}
+				doRender();
+			};
+
+			window.doAction = () => {
+				if (mode === 'ascii') {
+					if (!output.textContent) return;
+					navigator.clipboard.writeText(output.textContent).then(() => flash(actionBtn, 'Copied!'));
+				} else {
+					if (!lastSvg) return;
+					const a = document.createElement('a');
+					a.href = URL.createObjectURL(new Blob([lastSvg], { type: 'image/svg+xml' }));
+					a.download = 'output.svg';
+					a.click();
+					URL.revokeObjectURL(a.href);
+					flash(actionBtn, 'Saved!');
+				}
+			};
+
+			function flash(btn, text) {
+				const orig = btn.textContent;
+				btn.textContent = text;
+				btn.classList.add('bg-ok', 'border-okb', 'text-white');
+				setTimeout(() => {
+					btn.textContent = orig;
+					btn.classList.remove('bg-ok', 'border-okb', 'text-white');
+				}, 1500);
+			}
+
+			let timer;
+			input.addEventListener('input', () => {
+				clearTimeout(timer);
+				timer = setTimeout(doRender, 200);
+			});
+			padding.addEventListener('change', doRender);
+			unicode.addEventListener('change', doRender);
+
+			let dragging = false;
+			divider.addEventListener('mousedown', (e) => {
+				e.preventDefault();
+				dragging = true;
+				divider.classList.replace('bg-bdr', 'bg-hi');
+				document.body.style.cssText = 'cursor:col-resize;user-select:none';
+			});
+			document.addEventListener('mousemove', (e) => {
+				if (!dragging) return;
+				const r = divider.parentElement.getBoundingClientRect();
+				const pct = Math.max(15, Math.min(85, ((e.clientX - r.left) / r.width) * 100));
+				left.style.flex = `0 0 ${pct}%`;
+				right.style.flex = `0 0 ${100 - pct}%`;
+			});
+			document.addEventListener('mouseup', () => {
+				if (!dragging) return;
+				dragging = false;
+				divider.classList.replace('bg-hi', 'bg-bdr');
+				document.body.style.cssText = '';
+			});
+
+			// ── Example loader (like Homun-Lang) ─────────────────────
+			const EXAMPLE_NAMES = ['simple','flowchart','pipeline','diamond','shapes','edges','subgraph','architecture','multiline','lr_simple','lr_fanout','bt_simple'];
+			const EXAMPLES = {};
+
+			async function loadExamples() {
+				await Promise.all(EXAMPLE_NAMES.map(async name => {
+					try {
+						const resp = await fetch(`examples/${name}.mm.md`);
+						if (resp.ok) EXAMPLES[name] = await resp.text();
+					} catch(e) { console.warn(`Failed to load example: ${name}`, e); }
+				}));
+			}
+
+			$('examples').addEventListener('change', (e) => {
+				const ex = EXAMPLES[e.target.value];
+				if (ex) { input.value = ex; doRender(); }
+			});
+
+			(async () => {
+				await Promise.all([load(), loadExamples()]);
+			})();
+		</script>
+	</body>
+</html>

@@ -1,0 +1,35 @@
+[package]
+name = "mermaid-ascii"
+version = "0.1.0"
+edition = "2024"
+description = "Mermaid flowchart syntax to ASCII/Unicode text renderer"
+authors = []
+
+[[bin]]
+name = "mermaid-ascii"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[lib]
+name = "mermaid_ascii"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["cli"]
+cli = ["clap"]
+wasm = ["wasm-bindgen"]
+
+[dependencies]
+petgraph = "0.6"
+regex = "1"
+clap = { version = "4", features = ["derive"], optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+
+[[test]]
+name = "test_examples"
+path = "tests/e2e/test_examples.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
