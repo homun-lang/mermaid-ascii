@@ -466,3 +466,88 @@ order_layers := (nodes: @[NodeLayer], edges: @[LayoutEdge]) -> @[OrderedNode] {
   }
   out
 }
+
+// Layout stage 4: coordinate assignment.
+//
+// Maps each ordered node to a non-overlapping box on the character grid. A node's
+// (layer, order) pair is unique, so placing layers and orders on a uniform pitch
+// (max box size + gap) guarantees boxes never collide. For TD the layer axis runs
+// down (y) and order runs across (x); for LR the axes swap. Dummy nodes are single
+// cells (1x1 bend points); real nodes are sized to their label.
+
+@derive(Clone, Debug, PartialEq)
+LayoutNode := struct {
+  id: str,
+  x: int,
+  y: int,
+  width: int,
+  height: int,
+  is_dummy: bool,
+}
+
+// Display label for `id`, or `id` itself if unknown / unlabeled (dummies fall back
+// to their id, but they are sized as bend points regardless).
+label_for := (nodes: @[Node], id: str) -> str {
+  i ::= 0
+  while (i < len(nodes)) {
+    if (nodes[i].id == id) {
+      lbl := nodes[i].label
+      if (len(lbl) > 0) { => lbl }
+      => nodes[i].id
+    }
+    i ::= i + 1
+  }
+  id
+}
+
+// Box width for an ordered node: dummies are 1 wide; real boxes are the label width
+// plus 2 borders + 2 inner-padding spaces.
+box_width := (nodes: @[Node], o: OrderedNode) -> int {
+  if (o.is_dummy) { => 1 }
+  len(label_for(nodes, o.id)) + 4
+}
+
+// Box height: dummies are 1 tall; real boxes are a 3-line frame (top, label, bottom).
+box_height := (o: OrderedNode) -> int {
+  if (o.is_dummy) { => 1 }
+  3
+}
+
+// Assign grid coordinates + sizes, producing the LayoutNode list. `dir` selects
+// which axis the layers run along (TD: down, LR: across). Pitch is uniform across
+// the diagram (widest box + gap), keeping every box in its own cell.
+assign_coords := (ordered: @[OrderedNode], nodes: @[Node], dir: Direction) -> @[LayoutNode] {
+  maxw ::= 1
+  maxh ::= 1
+  i ::= 0
+  while (i < len(ordered)) {
+    w := box_width(nodes, ordered[i])
+    h := box_height(ordered[i])
+    if (w > maxw) { maxw ::= w }
+    if (h > maxh) { maxh ::= h }
+    i ::= i + 1
+  }
+
+  h_gap := 3
+  v_gap := 2
+  col_pitch := maxw + h_gap
+  row_pitch := maxh + v_gap
+
+  out ::= @[]
+  i ::= 0
+  while (i < len(ordered)) {
+    w := box_width(nodes, ordered[i])
+    h := box_height(ordered[i])
+    ax := ordered[i].order
+    bx := ordered[i].layer
+    px ::= bx * col_pitch
+    py ::= ax * row_pitch
+    if (dir == Direction.TD) {
+      px ::= ax * col_pitch
+      py ::= bx * row_pitch
+    }
+    push(out, LayoutNode { id: ordered[i].id, x: px, y: py, width: w, height: h, is_dummy: ordered[i].is_dummy })
+    i ::= i + 1
+  }
+  out
+}

@@ -247,3 +247,57 @@ fn order_layers_diamond_no_overlap() {
     layer1.sort_unstable();
     assert_eq!(layer1, vec![0, 1]);
 }
+
+// True if two axis-aligned boxes overlap (touching edges do not count as overlap).
+fn boxes_overlap(a: &mermaid_ascii::LayoutNode, b: &mermaid_ascii::LayoutNode) -> bool {
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
+fn coords_for(src: &str) -> Vec<mermaid_ascii::LayoutNode> {
+    use mermaid_ascii::{
+        assign_coords, assign_layers, insert_dummies, order_layers, parse_graph, remove_cycles,
+        tokenize,
+    };
+    let graph = parse_graph(tokenize(src.to_string()));
+    let dir = graph.direction.clone();
+    let dag = remove_cycles(graph.clone());
+    let layers = assign_layers(graph.nodes.clone(), dag.clone());
+    let expanded = insert_dummies(layers, dag);
+    let ordered = order_layers(expanded.nodes, expanded.edges);
+    assign_coords(ordered, graph.nodes.clone(), dir)
+}
+
+#[test]
+fn assign_coords_no_overlap_simple() {
+    let nodes = coords_for("graph TD\n    A --> B\n    B --> C\n");
+    assert_eq!(nodes.len(), 3);
+    for i in 0..nodes.len() {
+        for j in (i + 1)..nodes.len() {
+            assert!(
+                !boxes_overlap(&nodes[i], &nodes[j]),
+                "{} overlaps {}",
+                nodes[i].id,
+                nodes[j].id
+            );
+        }
+    }
+}
+
+#[test]
+fn assign_coords_no_overlap_diamond() {
+    let nodes = coords_for("graph TD\n    A --> B\n    A --> C\n    B --> D\n    C --> D\n");
+    for i in 0..nodes.len() {
+        for j in (i + 1)..nodes.len() {
+            assert!(
+                !boxes_overlap(&nodes[i], &nodes[j]),
+                "{} overlaps {}",
+                nodes[i].id,
+                nodes[j].id
+            );
+        }
+    }
+    // Real nodes carry a sized box (3 lines tall, label + frame wide).
+    let a = nodes.iter().find(|n| n.id == "A").unwrap();
+    assert_eq!(a.height, 3);
+    assert!(a.width >= 5);
+}
