@@ -1,0 +1,311 @@
+use std
+use chars
+
+@derive(Clone, Debug, PartialEq)
+TokenKind := enum {
+  Header,
+  DirTD,
+  DirLR,
+  Ident,
+  Label,
+  BracketOpen,
+  BracketClose,
+  ParenOpen,
+  ParenClose,
+  BraceOpen,
+  BraceClose,
+  DoubleParenOpen,
+  DoubleParenClose,
+  Arrow,
+  Line,
+  DottedArrow,
+  DottedLine,
+  ThickArrow,
+  ThickLine,
+  BidirArrow,
+  Pipe,
+  SubgraphKw,
+  EndKw,
+  Newline
+}
+
+@derive(Clone, Debug, PartialEq)
+Token := struct { kind: TokenKind, text: str }
+
+@derive(Clone, Debug)
+ReadResult := struct { text: str, end_pos: int }
+
+@derive(Clone, Debug)
+EdgeResult := struct { kind: TokenKind, end_pos: int }
+
+token_new := (kind: TokenKind, text: str) -> Token {
+  Token { kind: kind, text: text }
+}
+
+skip_whitespace := (src: str, pos: int) -> int {
+  p ::= pos
+  while (p < len(src) and (char_at(src, p) == " " or char_at(src, p) == "\t")) {
+    p ::= p + 1
+  }
+  p
+}
+
+skip_comment := (src: str, pos: int) -> int {
+  if (pos + 1 < len(src) and char_at(src, pos) == "%" and char_at(src, pos + 1) == "%") {
+    p ::= pos + 2
+    while (p < len(src) and char_at(src, p) != "\n") {
+      p ::= p + 1
+    }
+    p
+  } else {
+    pos
+  }
+}
+
+read_ident := (src: str, pos: int) -> ReadResult {
+  p ::= pos
+  while (p < len(src) and is_alnum(char_at(src, p))) {
+    p ::= p + 1
+  }
+  ReadResult { text: substr(src, pos, p), end_pos: p }
+}
+
+read_quoted_label := (src: str, pos: int) -> ReadResult {
+  p ::= pos + 1
+  parts ::= @[]
+  while (p < len(src) and char_at(src, p) != "\"") {
+    if (char_at(src, p) == "\\" and p + 1 < len(src)) {
+      next := char_at(src, p + 1)
+      if (next == "n") {
+        push(parts, "\n")
+        p ::= p + 2
+      } else {
+        push(parts, next)
+        p ::= p + 2
+      }
+    } else {
+      push(parts, char_at(src, p))
+      p ::= p + 1
+    }
+  }
+  if (p < len(src)) {
+    p ::= p + 1
+  }
+  ReadResult { text: join(parts, ""), end_pos: p }
+}
+
+read_bracket_label := (src: str, pos: int, close_ch: str) -> ReadResult {
+  p ::= pos
+  depth ::= 1
+  parts ::= @[]
+  while (p < len(src) and depth > 0) {
+    ch := char_at(src, p)
+    if (ch == close_ch) {
+      depth ::= depth - 1
+      if (depth == 0) {
+        => ReadResult { text: join(parts, ""), end_pos: p }
+      }
+    }
+    if (ch == "[" or ch == "(" or ch == "{") {
+      depth ::= depth + 1
+    }
+    push(parts, ch)
+    p ::= p + 1
+  }
+  ReadResult { text: join(parts, ""), end_pos: p }
+}
+
+try_edge := (src: str, pos: int) -> EdgeResult {
+  rest := substr(src, pos, len(src))
+  if (len(rest) >= 4 and substr(rest, 0, 4) == "<-->") {
+    => EdgeResult { kind: TokenKind.BidirArrow, end_pos: pos + 4 }
+  }
+  if (len(rest) >= 4 and substr(rest, 0, 4) == "-.->") {
+    => EdgeResult { kind: TokenKind.DottedArrow, end_pos: pos + 4 }
+  }
+  if (len(rest) >= 3 and substr(rest, 0, 3) == "-->") {
+    => EdgeResult { kind: TokenKind.Arrow, end_pos: pos + 3 }
+  }
+  if (len(rest) >= 3 and substr(rest, 0, 3) == "---") {
+    => EdgeResult { kind: TokenKind.Line, end_pos: pos + 3 }
+  }
+  if (len(rest) >= 3 and substr(rest, 0, 3) == "-.-") {
+    => EdgeResult { kind: TokenKind.DottedLine, end_pos: pos + 3 }
+  }
+  if (len(rest) >= 3 and substr(rest, 0, 3) == "==>") {
+    => EdgeResult { kind: TokenKind.ThickArrow, end_pos: pos + 3 }
+  }
+  if (len(rest) >= 3 and substr(rest, 0, 3) == "===") {
+    => EdgeResult { kind: TokenKind.ThickLine, end_pos: pos + 3 }
+  }
+  EdgeResult { kind: TokenKind.Newline, end_pos: pos }
+}
+
+classify_word := (word: str, token_count: int) -> Token {
+  if ((word == "graph" or word == "flowchart") and token_count == 0) {
+    => token_new(TokenKind.Header, word)
+  }
+  if (word == "subgraph") {
+    => token_new(TokenKind.SubgraphKw, word)
+  }
+  if (word == "end") {
+    => token_new(TokenKind.EndKw, word)
+  }
+  if (word == "TD" or word == "TB") {
+    => token_new(TokenKind.DirTD, word)
+  }
+  if (word == "LR") {
+    => token_new(TokenKind.DirLR, word)
+  }
+  token_new(TokenKind.Ident, word)
+}
+
+tokenize := (src: str) -> @[Token] {
+  tokens ::= @[]
+  p ::= 0
+
+  while (p < len(src)) {
+    p ::= skip_whitespace(src, p)
+    if (p >= len(src)) {
+      => tokens
+    }
+
+    ch := char_at(src, p)
+
+    if (ch == "\n") {
+      push(tokens, token_new(TokenKind.Newline, "\n"))
+      p ::= p + 1
+      continue
+    }
+
+    if (ch == "\r") {
+      p ::= p + 1
+      continue
+    }
+
+    p2 := skip_comment(src, p)
+    if (p2 != p) {
+      p ::= p2
+      continue
+    }
+
+    if (ch == "|") {
+      push(tokens, token_new(TokenKind.Pipe, "|"))
+      p ::= p + 1
+      continue
+    }
+
+    if (ch == "-" or ch == "=" or ch == "<") {
+      er := try_edge(src, p)
+      if (er.end_pos != p) {
+        push(tokens, token_new(er.kind, substr(src, p, er.end_pos)))
+        p ::= er.end_pos
+        continue
+      }
+    }
+
+    if (ch == "[") {
+      if (len(tokens) > 0 and tokens[len(tokens) - 1].kind == TokenKind.Ident) {
+        p ::= p + 1
+        if (p < len(src) and char_at(src, p) == "\"") {
+          rr := read_quoted_label(src, p)
+          push(tokens, token_new(TokenKind.BracketOpen, "["))
+          push(tokens, token_new(TokenKind.Label, rr.text))
+          p ::= rr.end_pos
+          if (p < len(src) and char_at(src, p) == "]") {
+            push(tokens, token_new(TokenKind.BracketClose, "]"))
+            p ::= p + 1
+          }
+        } else {
+          rr := read_bracket_label(src, p, "]")
+          push(tokens, token_new(TokenKind.BracketOpen, "["))
+          push(tokens, token_new(TokenKind.Label, rr.text))
+          p ::= rr.end_pos
+          if (p < len(src) and char_at(src, p) == "]") {
+            push(tokens, token_new(TokenKind.BracketClose, "]"))
+            p ::= p + 1
+          }
+        }
+      } else {
+        push(tokens, token_new(TokenKind.BracketOpen, "["))
+        p ::= p + 1
+      }
+      continue
+    }
+
+    if (ch == "]") {
+      push(tokens, token_new(TokenKind.BracketClose, "]"))
+      p ::= p + 1
+      continue
+    }
+
+    if (ch == "(") {
+      if (p + 1 < len(src) and char_at(src, p + 1) == "(") {
+        p ::= p + 2
+        push(tokens, token_new(TokenKind.DoubleParenOpen, "(("))
+        rr := read_bracket_label(src, p, ")")
+        if (rr.end_pos < len(src) and char_at(src, rr.end_pos) == ")") {
+          if (rr.end_pos + 1 < len(src) and char_at(src, rr.end_pos + 1) == ")") {
+            push(tokens, token_new(TokenKind.Label, rr.text))
+            push(tokens, token_new(TokenKind.DoubleParenClose, "))"))
+            p ::= rr.end_pos + 2
+          } else {
+            push(tokens, token_new(TokenKind.Label, rr.text))
+            p ::= rr.end_pos
+          }
+        } else {
+          push(tokens, token_new(TokenKind.Label, rr.text))
+          p ::= rr.end_pos
+        }
+      } else {
+        p ::= p + 1
+        push(tokens, token_new(TokenKind.ParenOpen, "("))
+        rr := read_bracket_label(src, p, ")")
+        push(tokens, token_new(TokenKind.Label, rr.text))
+        p ::= rr.end_pos
+        if (p < len(src) and char_at(src, p) == ")") {
+          push(tokens, token_new(TokenKind.ParenClose, ")"))
+          p ::= p + 1
+        }
+      }
+      continue
+    }
+
+    if (ch == ")") {
+      push(tokens, token_new(TokenKind.ParenClose, ")"))
+      p ::= p + 1
+      continue
+    }
+
+    if (ch == "{") {
+      p ::= p + 1
+      push(tokens, token_new(TokenKind.BraceOpen, "{"))
+      rr := read_bracket_label(src, p, "}")
+      push(tokens, token_new(TokenKind.Label, rr.text))
+      p ::= rr.end_pos
+      if (p < len(src) and char_at(src, p) == "}") {
+        push(tokens, token_new(TokenKind.BraceClose, "}"))
+        p ::= p + 1
+      }
+      continue
+    }
+
+    if (ch == "}") {
+      push(tokens, token_new(TokenKind.BraceClose, "}"))
+      p ::= p + 1
+      continue
+    }
+
+    if (is_alnum(ch)) {
+      rr := read_ident(src, p)
+      tok := classify_word(rr.text, len(tokens))
+      push(tokens, tok)
+      p ::= rr.end_pos
+      continue
+    }
+
+    p ::= p + 1
+  }
+
+  tokens
+}

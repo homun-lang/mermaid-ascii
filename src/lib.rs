@@ -2,15 +2,26 @@
     dead_code,
     unused_imports,
     unused_macros,
+    unused_mut,
+    clippy::assign_op_pattern,
+    clippy::clone_on_copy,
+    clippy::manual_map,
+    clippy::needless_return,
+    clippy::no_effect,
     clippy::ptr_arg,
     clippy::redundant_closure,
+    clippy::redundant_field_names,
+    clippy::unnecessary_to_owned,
+    clippy::unused_unit,
     clippy::useless_conversion
 )]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/runtime.rs"));
     include!(concat!(env!("OUT_DIR"), "/types.rs"));
+    include!(concat!(env!("OUT_DIR"), "/lexer.rs"));
 }
 pub use generated::{Direction, Edge, EdgeType, Graph, Node, NodeShape, Subgraph};
+pub use generated::{Token, TokenKind, tokenize};
 
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
