@@ -44,6 +44,12 @@ jobs:
       - name: Rust unit + integration tests
         run: cargo test
 
+      - name: Verify example goldens (gen.sh --check)
+        run: bash _site/examples/gen.sh --check
+        # Most example goldens are still WIP (only simple/lr_simple match exactly);
+        # report mismatches without failing the release build.
+        continue-on-error: true
+
   test-wasm:
     runs-on: ubuntu-latest
     steps:
