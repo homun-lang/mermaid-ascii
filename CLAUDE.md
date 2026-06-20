@@ -149,15 +149,43 @@ chmod +x ~/bin/homunc
 - Use `and`/`or`/`not` — NOT `&&`/`||`/`!` (these are lex errors)
 - `?` operator works for Result unwrapping
 
-## Pipeline
+## Pipeline / Architecture
+
+Narrow-waist ("hourglass") design. Each diagram type owns its **AST shape** and its
+**layout engine**; everything converges on **one shared graphIR**, and the renderers
+consume only that IR. Add a new diagram type by adding an AST + a layout engine that
+emits the same graphIR — renderers never change.
 
 ```
-Mermaid DSL text
-  → Parser (hand-rolled recursive descent)
-  → Graph AST (nodes, edges, subgraphs, direction)
-  → Sugiyama Layout (cycle removal → layers → ordering → coordinates → routing)
-  → ASCII Renderer (canvas + box-drawing characters)
-  → text output
+                shared tokenizer
+                      │
+          parser registry  (detect_type → dispatch)
+            ╱         │          ╲
+   Flowchart AST  Sequence AST  Architecture AST     ← AST shape differs per type
+        │             │            │
+   graph layout   seq layout   grid layout           ← layout engine differs per type
+   (Sugiyama)     (linear)      (force/grid)
+        ╲            │           ╱
+        ★ one shared graphIR (LayoutResult) ★         ← SHARED waist
+          LayoutNode[] (x/y/w/h) + RoutedEdge[] (waypoints)
+                      │
+          ASCII renderer  /  SVG renderer             ← SHARED (IR-only)
+```
+
+- **Shared (lower half):** the graphIR (`LayoutResult`) + ASCII/SVG renderers.
+- **Per-type (upper half):** the AST and the layout engine that turns that AST into graphIR.
+- A layout engine's only contract: emit a valid `LayoutNode[] + RoutedEdge[]`.
+
+**Current scope:** only the **flowchart** path is implemented (Sugiyama → graphIR →
+ASCII/SVG), and only **TD / LR** directions. Sequence/architecture types are future
+extensions of this same architecture (not in scope yet).
+
+Flowchart path detail:
+
+```
+Mermaid text → Lexer (tokenize) → Parser (recursive descent) → Graph AST
+  → Sugiyama layout (cycle removal → layers → ordering → coordinates → A* routing)
+  → graphIR (LayoutResult) → ASCII renderer | SVG renderer → output
 ```
 
 ## Key Files
