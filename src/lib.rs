@@ -28,8 +28,14 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/parser.rs"));
     include!(concat!(env!("OUT_DIR"), "/layout.rs"));
     include!(concat!(env!("OUT_DIR"), "/pathfinder.rs"));
+    include!(concat!(env!("OUT_DIR"), "/canvas.rs"));
+    include!(concat!(env!("OUT_DIR"), "/render_ascii.rs"));
 }
 pub use generated::parse_graph;
+pub use generated::{
+    BoxChars, Canvas, CharSet, canvas_new, canvas_to_string, charset_ascii, charset_unicode,
+    paint_node,
+};
 pub use generated::{Direction, Edge, EdgeType, Graph, Node, NodeShape, Subgraph};
 pub use generated::{
     DummyResult, LayoutNode, OrderedNode, assign_coords, insert_dummies, order_layers,

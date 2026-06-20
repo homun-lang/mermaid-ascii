@@ -506,3 +506,98 @@ fn route_waypoints_connect_endpoints_td() {
     assert_eq!(first.y, a.y + a.height - 1);
     assert_eq!(last.y, b.y);
 }
+
+// --- ASCII renderer: shape-aware node boxes (task-27) ---
+
+fn paint_one(width: i32, shape: mermaid_ascii::NodeShape, label: &str) -> String {
+    use mermaid_ascii::{LayoutNode, canvas_new, canvas_to_string, charset_unicode, paint_node};
+    let n = LayoutNode {
+        id: "n".to_string(),
+        x: 0,
+        y: 0,
+        width,
+        height: 3,
+        is_dummy: false,
+    };
+    let mut c = canvas_new(width, 3);
+    paint_node(&mut c, charset_unicode(), n, shape, label.to_string());
+    canvas_to_string(c)
+}
+
+#[test]
+fn paint_rectangle_box() {
+    // width = len("Rectangle") + 4 = 13
+    assert_eq!(
+        paint_one(13, mermaid_ascii::NodeShape::Rectangle, "Rectangle"),
+        "┌───────────┐\n│ Rectangle │\n└───────────┘\n"
+    );
+}
+
+#[test]
+fn paint_rounded_box() {
+    assert_eq!(
+        paint_one(11, mermaid_ascii::NodeShape::Rounded, "Rounded"),
+        "╭─────────╮\n│ Rounded │\n╰─────────╯\n"
+    );
+}
+
+#[test]
+fn paint_diamond_box() {
+    assert_eq!(
+        paint_one(11, mermaid_ascii::NodeShape::Diamond, "Diamond"),
+        "/─────────\\\n│ Diamond │\n\\─────────/\n"
+    );
+}
+
+#[test]
+fn paint_circle_box() {
+    // Circle has no vertical side borders; label centered in inner width.
+    assert_eq!(
+        paint_one(10, mermaid_ascii::NodeShape::Circle, "Circle"),
+        "(────────)\n  Circle\n(────────)\n"
+    );
+}
+
+#[test]
+fn paint_dummy_node_is_skipped() {
+    use mermaid_ascii::{LayoutNode, canvas_new, canvas_to_string, charset_unicode, paint_node};
+    let n = LayoutNode {
+        id: "__d0".to_string(),
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        is_dummy: true,
+    };
+    let mut c = canvas_new(5, 3);
+    paint_node(
+        &mut c,
+        charset_unicode(),
+        n,
+        mermaid_ascii::NodeShape::Rectangle,
+        "".to_string(),
+    );
+    assert_eq!(canvas_to_string(c), "");
+}
+
+#[test]
+fn paint_ascii_charset_rectangle() {
+    use mermaid_ascii::{LayoutNode, canvas_new, canvas_to_string, charset_ascii, paint_node};
+    let n = LayoutNode {
+        id: "n".to_string(),
+        x: 0,
+        y: 0,
+        width: 7,
+        height: 3,
+        is_dummy: false,
+    };
+    let mut c = canvas_new(7, 3);
+    paint_node(
+        &mut c,
+        charset_ascii(),
+        n,
+        mermaid_ascii::NodeShape::Rectangle,
+        "Hi".to_string(),
+    );
+    assert_eq!(canvas_to_string(c), "+-----+\n| Hi  |\n+-----+\n");
+}

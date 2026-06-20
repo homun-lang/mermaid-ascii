@@ -1,0 +1,90 @@
+use std
+
+// ASCII renderer stage 1: paint a single node box, shape-aware.
+//
+// Draws the frame for a laid-out node at (n.x, n.y), sized n.width x n.height, and
+// centers `label` on the middle row. The interior text width is inner = width - 2
+// (the two columns taken by the side borders); the label is horizontally centered
+// inside it and clipped if it would overflow. Glyphs are chosen per shape:
+//   Rectangle -> box-drawing corners (cs.bx.tl/tr/bl/br)
+//   Rounded   -> rounded corners (cs.round_*)
+//   Diamond   -> slanted corners  /\  on top,  \/  on the bottom
+//   Circle    -> parens  (  )  as corners, no vertical side borders
+// Dummy nodes are bend points, not boxes, so they are skipped. Canvas/CharSet come
+// from canvas.hom; LayoutNode/NodeShape from layout.hom/types.hom (same module).
+
+// Bounds-checked single-cell paint. Mirrors canvas.hom's canvas_set, but kept local:
+// this homunc only forwards a `::=` (mut-ref) argument to callees defined in the SAME
+// module — a cross-module `canvas_set(c, ...)` would compile as `canvas_set(c.clone(), ..)`
+// (owned, mutation lost / type error). So all canvas writes here go through this helper.
+cset := (c::Canvas, x: int, y: int, ch: str) -> _ {
+  if (x >= 0 and y >= 0 and x < c.width and y < c.height) {
+    c.cells[y][x] := ch
+  }
+}
+
+// Paint one horizontal border row at grid row `py`: left corner, interior `fill`,
+// right corner. A width < 2 box just gets its corners (no interior run).
+paint_border := (c::Canvas, x: int, py: int, w: int, left: str, fill: str, right: str) -> _ {
+  cset(c, x, py, left)
+  i ::= 1
+  while (i < w - 1) {
+    cset(c, x + i, py, fill)
+    i ::= i + 1
+  }
+  cset(c, x + w - 1, py, right)
+}
+
+// Paint the middle (label) row: optional side borders plus the centered label.
+// `inner` is width - 2; the label is clipped to it then centered with `pad` spaces
+// on the left. Parens are computed via intermediate vars (this homunc drops
+// grouping parens in arithmetic, so `(inner - len) / 2` must not be inlined).
+paint_label := (c::Canvas, x: int, py: int, w: int, side: str, has_side: bool, label: str) -> _ {
+  if (has_side) {
+    cset(c, x, py, side)
+    cset(c, x + w - 1, py, side)
+  }
+  inner := w - 2
+  lab ::= label
+  if (len(lab) > inner) {
+    lab ::= substr(lab, 0, inner)
+  }
+  slack := inner - len(lab)
+  pad := slack / 2
+  start := x + 1 + pad
+  i ::= 0
+  while (i < len(lab)) {
+    cset(c, start + i, py, char_at(lab, i))
+    i ::= i + 1
+  }
+}
+
+// Paint a full 3-part box (top border, label row, bottom border) with the given
+// glyphs. `has_side` is false for circles (their label row has no vertical borders).
+paint_box := (c::Canvas, x: int, y: int, w: int, h: int, tl: str, tr: str, bl: str, br: str, fill: str, side: str, has_side: bool, label: str) -> _ {
+  bot := y + h - 1
+  paint_border(c, x, y, w, tl, fill, tr)
+  paint_label(c, x, y + 1, w, side, has_side, label)
+  paint_border(c, x, bot, w, bl, fill, br)
+}
+
+// Paint a laid-out node's box onto the canvas, choosing glyphs by shape. Dummy
+// nodes (routing bend points) are skipped. `cs` selects the Unicode/ASCII glyph set.
+paint_node := (c::Canvas, cs: CharSet, n: LayoutNode, shape: NodeShape, label: str) -> _ {
+  if (not n.is_dummy) {
+    match shape {
+      NodeShape.Rectangle -> {
+        paint_box(c, n.x, n.y, n.width, n.height, cs.bx.tl, cs.bx.tr, cs.bx.bl, cs.bx.br, cs.bx.h, cs.bx.v, true, label)
+      }
+      NodeShape.Rounded -> {
+        paint_box(c, n.x, n.y, n.width, n.height, cs.round_tl, cs.round_tr, cs.round_bl, cs.round_br, cs.bx.h, cs.bx.v, true, label)
+      }
+      NodeShape.Diamond -> {
+        paint_box(c, n.x, n.y, n.width, n.height, "/", "\\", "\\", "/", cs.bx.h, cs.bx.v, true, label)
+      }
+      NodeShape.Circle -> {
+        paint_box(c, n.x, n.y, n.width, n.height, "(", ")", "(", ")", cs.bx.h, " ", false, label)
+      }
+    }
+  }
+}
