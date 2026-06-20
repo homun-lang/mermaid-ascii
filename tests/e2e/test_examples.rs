@@ -217,3 +217,33 @@ fn assign_layers_simple_chain() {
     assert_eq!(layer_of("B"), 1);
     assert_eq!(layer_of("C"), 2);
 }
+
+#[test]
+fn order_layers_diamond_no_overlap() {
+    use mermaid_ascii::{
+        assign_layers, insert_dummies, order_layers, parse_graph, remove_cycles, tokenize,
+    };
+    // diamond.mm.md: A-->B, A-->C, B-->D, C-->D
+    // layers: A=0, B=C=1, D=2. B and C share layer 1 and must get distinct orders.
+    let tokens =
+        tokenize("graph TD\n    A --> B\n    A --> C\n    B --> D\n    C --> D\n".to_string());
+    let graph = parse_graph(tokens);
+    let dag = remove_cycles(graph.clone());
+    let layers = assign_layers(graph.nodes.clone(), dag.clone());
+    let expanded = insert_dummies(layers, dag);
+    let ordered = order_layers(expanded.nodes, expanded.edges);
+    let find = |id: &str| ordered.iter().find(|o| o.id == id).unwrap();
+    // Single node per layer sits at order 0.
+    assert_eq!(find("A").order, 0);
+    assert_eq!(find("D").order, 0);
+    // B and C occupy the same layer with no overlapping order.
+    assert_eq!(find("B").layer, find("C").layer);
+    assert_ne!(find("B").order, find("C").order);
+    let mut layer1: Vec<i64> = ordered
+        .iter()
+        .filter(|o| o.layer == find("B").layer)
+        .map(|o| o.order as i64)
+        .collect();
+    layer1.sort_unstable();
+    assert_eq!(layer1, vec![0, 1]);
+}

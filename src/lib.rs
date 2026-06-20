@@ -27,6 +27,7 @@ mod generated {
 }
 pub use generated::parse_graph;
 pub use generated::{Direction, Edge, EdgeType, Graph, Node, NodeShape, Subgraph};
+pub use generated::{DummyResult, OrderedNode, insert_dummies, order_layers};
 pub use generated::{LayoutEdge, NodeLayer, assign_layers, remove_cycles};
 pub use generated::{Token, TokenKind, tokenize};
 

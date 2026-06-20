@@ -237,3 +237,232 @@ assign_layers := (nodes: @[Node], edges: @[LayoutEdge]) -> @[NodeLayer] {
   }
   out
 }
+
+// Layout stage 3: dummy-node insertion + within-layer ordering (barycenter).
+//
+// Sugiyama needs every edge to span exactly one layer (so routing stays straight
+// and crossings are well-defined). A real edge u->v spanning more than one layer
+// is broken into unit segments u->d1->d2->...->v through synthetic "dummy" nodes,
+// one per intermediate layer. Dummy ids are "__d<N>"; the renderer treats them as
+// invisible bend points rather than boxes.
+
+@derive(Clone, Debug, PartialEq)
+DummyResult := struct {
+  nodes: @[NodeLayer],
+  edges: @[LayoutEdge],
+}
+
+@derive(Clone, Debug, PartialEq)
+OrderedNode := struct {
+  id: str,
+  layer: int,
+  order: int,
+  is_dummy: bool,
+}
+
+// True if `id` is a synthetic dummy node (prefix "__d").
+is_dummy_id := (id: str) -> bool {
+  len(id) >= 3 and substr(id, 0, 3) == "__d"
+}
+
+// Layer assigned to `id`, or -1 if not present in `layers`.
+layer_of_id := (layers: @[NodeLayer], id: str) -> int {
+  i ::= 0
+  while (i < len(layers)) {
+    if (layers[i].id == id) { => layers[i].layer }
+    i ::= i + 1
+  }
+  -1
+}
+
+// Insert dummy nodes so every edge spans exactly one layer. Returns the expanded
+// node set (real + dummies, each with its layer) and the unit-segment edge set.
+// `edges` must be acyclic with layer(to) > layer(from) (assign_layers guarantees
+// layer(to) >= layer(from)+1 for every DAG edge).
+insert_dummies := (layers: @[NodeLayer], edges: @[LayoutEdge]) -> DummyResult {
+  out_nodes ::= @[]
+  i ::= 0
+  while (i < len(layers)) {
+    push(out_nodes, NodeLayer { id: layers[i].id, layer: layers[i].layer })
+    i ::= i + 1
+  }
+
+  // Fields are re-read from edges[e] on each use: homunc moves non-Copy fields,
+  // so binding the edge once and reusing its fields across segments won't compile.
+  out_edges ::= @[]
+  counter ::= 0
+  e ::= 0
+  while (e < len(edges)) {
+    lu := layer_of_id(layers, edges[e].from_id)
+    lv := layer_of_id(layers, edges[e].to_id)
+    if (lv - lu <= 1) {
+      push(out_edges, edges[e])
+    } else {
+      prev ::= edges[e].from_id
+      l ::= lu + 1
+      while (l < lv) {
+        push(out_nodes, NodeLayer { id: "__d${counter}", layer: l })
+        push(out_edges, LayoutEdge { from_id: prev, to_id: "__d${counter}", edge_type: edges[e].edge_type, label: "", reversed: edges[e].reversed })
+        prev ::= "__d${counter}"
+        counter ::= counter + 1
+        l ::= l + 1
+      }
+      // Final segment carries the original label (it terminates at the real target).
+      push(out_edges, LayoutEdge { from_id: prev, to_id: edges[e].to_id, edge_type: edges[e].edge_type, label: edges[e].label, reversed: edges[e].reversed })
+    }
+    e ::= e + 1
+  }
+
+  DummyResult { nodes: out_nodes, edges: out_edges }
+}
+
+// Layer of `id` among parallel arrays, or -1.
+node_layer := (ids: @[str], lays: @[int], id: str) -> int {
+  i ::= 0
+  while (i < len(ids)) {
+    if (ids[i] == id) { => lays[i] }
+    i ::= i + 1
+  }
+  -1
+}
+
+// Current within-layer order of `id`, or 0.
+node_order := (ids: @[str], ords: @[int], id: str) -> int {
+  i ::= 0
+  while (i < len(ids)) {
+    if (ids[i] == id) { => ords[i] }
+    i ::= i + 1
+  }
+  0
+}
+
+// Reorder the nodes of layer `l` by the barycenter (mean position) of their
+// neighbors in the adjacent layer `adj`. Returns a fresh order array (only the
+// layer-`l` entries change). Barycenters are scaled by 1000 to keep the mean in
+// integer arithmetic; a node with no neighbor in `adj` keeps its current slot.
+sweep_layer := (ids: @[str], lays: @[int], ords: @[int], edges: @[LayoutEdge], l: int, adj: int) -> @[int] {
+  members ::= @[]
+  i ::= 0
+  while (i < len(ids)) {
+    if (lays[i] == l) { push(members, i) }
+    i ::= i + 1
+  }
+
+  bary ::= @[]
+  m ::= 0
+  while (m < len(members)) {
+    idx := members[m]
+    nid := ids[idx]
+    sum ::= 0
+    cnt ::= 0
+    e ::= 0
+    while (e < len(edges)) {
+      hit ::= false
+      other ::= str("")
+      if (edges[e].from_id == nid and node_layer(ids, lays, edges[e].to_id) == adj) {
+        other ::= edges[e].to_id
+        hit ::= true
+      }
+      if (edges[e].to_id == nid and node_layer(ids, lays, edges[e].from_id) == adj) {
+        other ::= edges[e].from_id
+        hit ::= true
+      }
+      if (hit) {
+        sum ::= sum + node_order(ids, ords, other)
+        cnt ::= cnt + 1
+      }
+      e ::= e + 1
+    }
+    if (cnt > 0) {
+      push(bary, (sum * 1000) / cnt)
+    } else {
+      push(bary, ords[idx] * 1000)
+    }
+    m ::= m + 1
+  }
+
+  // Selection sort members by barycenter (picks earliest minimum → stable).
+  k ::= 0
+  while (k < len(members)) {
+    minp ::= k
+    p ::= k + 1
+    while (p < len(members)) {
+      if (bary[p] < bary[minp]) { minp ::= p }
+      p ::= p + 1
+    }
+    tm := members[minp]
+    members[minp] := members[k]
+    members[k] := tm
+    tb := bary[minp]
+    bary[minp] := bary[k]
+    bary[k] := tb
+    k ::= k + 1
+  }
+
+  newords ::= @[]
+  i ::= 0
+  while (i < len(ords)) {
+    push(newords, ords[i])
+    i ::= i + 1
+  }
+  k ::= 0
+  while (k < len(members)) {
+    newords[members[k]] := k
+    k ::= k + 1
+  }
+  newords
+}
+
+// Assign a within-layer order to every node to reduce edge crossings. Starts
+// from appearance order, then alternates downward and upward barycenter sweeps
+// (4 rounds) — the standard Sugiyama crossing-reduction heuristic.
+order_layers := (nodes: @[NodeLayer], edges: @[LayoutEdge]) -> @[OrderedNode] {
+  n := len(nodes)
+  ids ::= @[]
+  lays ::= @[]
+  maxlayer ::= 0
+  i ::= 0
+  while (i < n) {
+    push(ids, nodes[i].id)
+    push(lays, nodes[i].layer)
+    if (nodes[i].layer > maxlayer) { maxlayer ::= nodes[i].layer }
+    i ::= i + 1
+  }
+
+  // Initial order within a layer = count of earlier nodes sharing that layer.
+  ords ::= @[]
+  i ::= 0
+  while (i < n) {
+    c ::= 0
+    j ::= 0
+    while (j < i) {
+      if (lays[j] == lays[i]) { c ::= c + 1 }
+      j ::= j + 1
+    }
+    push(ords, c)
+    i ::= i + 1
+  }
+
+  iter ::= 0
+  while (iter < 4) {
+    l ::= 1
+    while (l <= maxlayer) {
+      ords ::= sweep_layer(ids, lays, ords, edges, l, l - 1)
+      l ::= l + 1
+    }
+    l ::= maxlayer - 1
+    while (l >= 0) {
+      ords ::= sweep_layer(ids, lays, ords, edges, l, l + 1)
+      l ::= l - 1
+    }
+    iter ::= iter + 1
+  }
+
+  out ::= @[]
+  i ::= 0
+  while (i < n) {
+    push(out, OrderedNode { id: ids[i], layer: lays[i], order: ords[i], is_dummy: is_dummy_id(ids[i]) })
+    i ::= i + 1
+  }
+  out
+}
