@@ -302,6 +302,36 @@ fn assign_coords_no_overlap_diamond() {
     assert!(a.width >= 5);
 }
 
+#[test]
+fn assign_coords_lr_simple_horizontal() {
+    // lr_simple.mm.md: a chain lays out left-to-right — x grows per layer while
+    // y stays constant (all nodes share order 0).
+    let nodes = coords_for("flowchart LR\n    Start --> Middle --> End\n");
+    let s = nodes.iter().find(|n| n.id == "Start").unwrap();
+    let m = nodes.iter().find(|n| n.id == "Middle").unwrap();
+    let e = nodes.iter().find(|n| n.id == "End").unwrap();
+    assert!(s.x < m.x && m.x < e.x, "LR chain should progress along x");
+    assert_eq!(s.y, m.y, "LR chain should share a single row");
+    assert_eq!(m.y, e.y, "LR chain should share a single row");
+}
+
+#[test]
+fn assign_coords_lr_fanout_horizontal() {
+    // lr_fanout.mm.md: siblings share a layer (same x) and stack vertically
+    // (distinct, increasing y); the parent sits to their left.
+    let nodes = coords_for("flowchart LR\n    A --> B\n    A --> C\n    A --> D\n");
+    let a = nodes.iter().find(|n| n.id == "A").unwrap();
+    let b = nodes.iter().find(|n| n.id == "B").unwrap();
+    let c = nodes.iter().find(|n| n.id == "C").unwrap();
+    let d = nodes.iter().find(|n| n.id == "D").unwrap();
+    assert!(a.x < b.x, "parent A should sit left of its children");
+    assert_eq!(b.x, c.x, "siblings share a layer column");
+    assert_eq!(c.x, d.x, "siblings share a layer column");
+    let mut ys = [b.y, c.y, d.y];
+    ys.sort();
+    assert!(ys[0] < ys[1] && ys[1] < ys[2], "siblings stack along y");
+}
+
 // Full layout through routing: returns (laid-out nodes, routed edges).
 fn route_for(
     src: &str,

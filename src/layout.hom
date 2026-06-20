@@ -538,13 +538,18 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], dir: Direction) -> @[
   while (i < len(ordered)) {
     w := box_width(nodes, ordered[i])
     h := box_height(ordered[i])
-    ax := ordered[i].order
-    bx := ordered[i].layer
-    px ::= bx * col_pitch
-    py ::= ax * row_pitch
-    if (dir == Direction.TD) {
-      px ::= ax * col_pitch
-      py ::= bx * row_pitch
+    ord := ordered[i].order
+    lay := ordered[i].layer
+    // TD is the identity layout: order runs across (x), layers run down (y).
+    px ::= ord * col_pitch
+    py ::= lay * row_pitch
+    if (dir == Direction.LR) {
+      // LR transposes the grid before painting: layers run across (x), order
+      // stacks down (y). Only the placement axes swap — boxes keep their drawn
+      // width/height (label text is never rotated), so x stays on the
+      // width-based col_pitch and y on the height-based row_pitch.
+      px ::= lay * col_pitch
+      py ::= ord * row_pitch
     }
     push(out, LayoutNode { id: ordered[i].id, x: px, y: py, width: w, height: h, is_dummy: ordered[i].is_dummy })
     i ::= i + 1
