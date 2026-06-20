@@ -1,0 +1,33 @@
+# Persistent Rust toolchain container for mermaid-ascii.
+#
+# This shell/host has no cargo. This compose runs a long-lived `rust` container
+# (kept alive with `tail -f /dev/null`) with the meta-repo mounted, so the
+# claude-bot workers — or you — can run cargo inside it:
+#
+#   docker compose up -d                              # start (once)
+#   docker compose exec rust cargo build              # build (.hom -> .rs via homunc, then rustc)
+#   docker compose exec rust cargo test               # run tests
+#   docker compose exec rust bash                     # shell inside
+#   docker compose down                               # stop + remove
+#
+# build.rs finds homunc at .tmp/homunc (committed, linux-x86_64) — no download needed.
+# cargo registry + target are named volumes: deps persist, host stays clean, no
+# host/container artifact arch clashes.
+
+services:
+  rust:
+    image: rust:1-bookworm
+    container_name: mermaid-ascii-rust
+    # Mount the whole Homun-Compiler meta-repo so ../Homun-Lang is reachable too.
+    working_dir: /work/mermaid-ascii
+    volumes:
+      - ..:/work
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-target:/work/mermaid-ascii/target
+    # Forever life — container stays up doing nothing until you exec into it.
+    command: ["tail", "-f", "/dev/null"]
+    restart: unless-stopped
+
+volumes:
+  cargo-registry:
+  cargo-target:
