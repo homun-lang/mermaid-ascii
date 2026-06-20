@@ -947,3 +947,109 @@ fn golden_svg_examples() {
         "expected every passing golden svg case to be checked"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Lib-level golden suite (ported from ../markdown-to-html/tests/e2e/test_examples.rs).
+// Instead of spawning the CLI binary, these render every _site/examples/*.mm.md
+// directly through the library API (render_dsl / render_dsl_svg) and assert
+// equality with the matching .expect.txt / .expect.svg. Cases the renderer fully
+// reproduces today (GOLDEN_*_PASSING) are diffed exactly; the rest are still
+// exercised end-to-end (must render to non-empty / well-formed output) so the
+// harness already covers them and starts asserting as soon as they match.
+// ---------------------------------------------------------------------------
+
+// Iterate _site/examples/*.mm.md in sorted order, yielding (stem, input source).
+fn example_cases() -> Vec<(String, String)> {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/_site/examples");
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .expect("read examples dir")
+        .map(|e| e.expect("dir entry").path())
+        .collect();
+    entries.sort();
+
+    let mut cases = Vec::new();
+    for path in entries {
+        let name = path.file_name().unwrap().to_str().unwrap().to_string();
+        let stem = match name.strip_suffix(".mm.md") {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+        let input = std::fs::read_to_string(&path).expect("read example input");
+        cases.push((stem, input));
+    }
+    cases
+}
+
+#[test]
+fn lib_golden_txt_examples() {
+    use std::path::Path;
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/_site/examples");
+
+    let mut checked = 0;
+    for (stem, input) in example_cases() {
+        // Library default text rendering mirrors the no-flag CLI: Unicode, no
+        // direction override (direction comes from the diagram header).
+        let got = mermaid_ascii::render_dsl(&input, false, None);
+
+        let expect_path = format!("{dir}/{stem}.expect.txt");
+        if !Path::new(&expect_path).exists() {
+            continue;
+        }
+
+        if GOLDEN_TXT_PASSING.contains(&stem.as_str()) {
+            let want = std::fs::read_to_string(&expect_path).expect("read expect.txt");
+            assert_eq!(got, want, "lib golden txt mismatch for {stem}");
+            checked += 1;
+        } else {
+            assert!(!got.is_empty(), "lib produced no text output for {stem}");
+        }
+    }
+
+    assert_eq!(
+        checked,
+        GOLDEN_TXT_PASSING.len(),
+        "expected every passing lib golden txt case to be checked"
+    );
+}
+
+#[test]
+fn lib_golden_svg_examples() {
+    use std::path::Path;
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/_site/examples");
+
+    let mut checked = 0;
+    for (stem, input) in example_cases() {
+        let got = mermaid_ascii::render_dsl_svg(&input, None);
+
+        let expect_path = format!("{dir}/{stem}.expect.svg");
+        if !Path::new(&expect_path).exists() {
+            continue;
+        }
+
+        if GOLDEN_SVG_PASSING.contains(&stem.as_str()) {
+            let want = std::fs::read_to_string(&expect_path).expect("read expect.svg");
+            assert_eq!(got, want, "lib golden svg mismatch for {stem}");
+            checked += 1;
+        } else {
+            let trimmed = got.trim();
+            assert!(
+                trimmed.starts_with("<svg") || trimmed.starts_with("<?xml"),
+                "lib svg output for {stem} does not start with an <svg> root"
+            );
+            assert!(
+                trimmed.ends_with("</svg>"),
+                "lib svg output for {stem} is not closed with </svg>"
+            );
+            assert!(
+                got.contains("xmlns=\"http://www.w3.org/2000/svg\""),
+                "lib svg output for {stem} missing svg xmlns declaration"
+            );
+        }
+    }
+
+    assert_eq!(
+        checked,
+        GOLDEN_SVG_PASSING.len(),
+        "expected every passing lib golden svg case to be checked"
+    );
+}
