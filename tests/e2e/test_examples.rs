@@ -800,3 +800,74 @@ fn edge_through_dummy_is_straight_passthrough() {
         "┌───┐\n│ A │\n└─┬─┘\n  │\n  │\n  │\n"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Golden-file integration test: run the built binary over every
+// _site/examples/*.mm.md and diff its text output against the matching
+// *.expect.txt. Cases the renderer fully reproduces today are asserted equal;
+// the rest are still exercised end-to-end (binary must run and emit output)
+// so the harness already covers them and starts asserting as soon as they
+// match. As more renderers land, move their names into GOLDEN_TXT_PASSING.
+// ---------------------------------------------------------------------------
+
+// Example stems whose binary output currently matches their .expect.txt exactly.
+const GOLDEN_TXT_PASSING: &[&str] = &["simple", "lr_simple"];
+
+// Run the CLI binary on `input_path` and return its stdout as a String.
+fn run_binary(input_path: &str) -> String {
+    use std::process::Command;
+    let bin = env!("CARGO_BIN_EXE_mermaid-ascii");
+    let out = Command::new(bin)
+        .arg(input_path)
+        .output()
+        .expect("failed to run mermaid-ascii binary");
+    assert!(
+        out.status.success(),
+        "binary exited with failure on {input_path}"
+    );
+    String::from_utf8(out.stdout).expect("binary output not utf-8")
+}
+
+#[test]
+fn golden_txt_examples() {
+    use std::path::Path;
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/_site/examples");
+
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .expect("read examples dir")
+        .map(|e| e.expect("dir entry").path())
+        .collect();
+    entries.sort();
+
+    let mut checked = 0;
+    for path in entries {
+        let name = path.file_name().unwrap().to_str().unwrap().to_string();
+        let stem = match name.strip_suffix(".mm.md") {
+            Some(s) => s,
+            None => continue,
+        };
+        let input = path.to_str().unwrap();
+        let got = run_binary(input);
+
+        let expect_path = format!("{dir}/{stem}.expect.txt");
+        if !Path::new(&expect_path).exists() {
+            continue;
+        }
+
+        if GOLDEN_TXT_PASSING.contains(&stem) {
+            let want = std::fs::read_to_string(&expect_path).expect("read expect.txt");
+            assert_eq!(got, want, "golden txt mismatch for {stem}");
+            checked += 1;
+        } else {
+            // Renderer for this example is still WIP: only require the binary to
+            // run and produce non-empty output (full golden diff comes later).
+            assert!(!got.is_empty(), "binary produced no output for {stem}");
+        }
+    }
+
+    assert_eq!(
+        checked,
+        GOLDEN_TXT_PASSING.len(),
+        "expected every passing golden txt case to be checked"
+    );
+}
