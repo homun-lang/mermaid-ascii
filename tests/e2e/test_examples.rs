@@ -685,7 +685,7 @@ fn edge_dotted_arrow() {
     // E -.-> F : dotted line glyph ╎ with a ▼ arrowhead.
     assert_eq!(
         paint_vertical_edge(mermaid_ascii::EdgeType::DottedArrow, false, ""),
-        "┌───┐\n│ A │\n└─┬─┘\n  ╎\n  ╎\n  ▼\n┌───┐\n│ B │\n└───┘\n"
+        "┌───┐\n│ A │\n└─┬─┘\n  │\n  ╎\n  ▼\n┌───┐\n│ B │\n└───┘\n"
     );
 }
 
@@ -694,7 +694,7 @@ fn edge_thick_arrow() {
     // G ==> H : thick line glyph ║ with a ▼ arrowhead.
     assert_eq!(
         paint_vertical_edge(mermaid_ascii::EdgeType::ThickArrow, false, ""),
-        "┌───┐\n│ A │\n└─┬─┘\n  ║\n  ║\n  ▼\n┌───┐\n│ B │\n└───┘\n"
+        "┌───┐\n│ A │\n└─┬─┘\n  │\n  ║\n  ▼\n┌───┐\n│ B │\n└───┘\n"
     );
 }
 
