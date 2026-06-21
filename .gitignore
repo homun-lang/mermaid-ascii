@@ -27,6 +27,8 @@ _site/*.js
 _site/version.txt
 !_site/index.html
 *.svg
+# ...but the golden SVG reference files ARE committed (the e2e suite diffs against them).
+!_site/examples/*.expect.svg
 
 .claude/
 .claude
