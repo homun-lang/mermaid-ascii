@@ -9,6 +9,7 @@ pub mod graph;
     unused_variables,
     clippy::assign_op_pattern,
     clippy::clone_on_copy,
+    clippy::let_and_return,
     clippy::manual_map,
     clippy::needless_return,
     clippy::no_effect,
