@@ -385,10 +385,18 @@ paint_edge := (c::Canvas, cs: CharSet, e: RoutedEdge) -> _ {
       i ::= i + 1
     }
 
-    // Edge label: painted just right of the path midpoint cell (beside the line).
+    // Edge label. On a forked edge (path turns through a centred bar) the label sits
+    // just above the turn into the target — i.e. one row above the target-side bend,
+    // at that branch's column. A straight edge keeps the beside-midpoint placement.
     if (len(e.label) > 0) {
-      mid := cells[n / 2]
-      paint_text(c, mid.x + 1, mid.y, e.label)
+      wl := len(e.waypoints)
+      if (wl >= 4) {
+        tb := e.waypoints[wl - 2]
+        paint_text(c, tb.x, tb.y - 1, e.label)
+      } else {
+        mid := cells[n / 2]
+        paint_text(c, mid.x + 1, mid.y, e.label)
+      }
     }
   }
 }
