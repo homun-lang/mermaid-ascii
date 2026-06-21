@@ -807,25 +807,11 @@ fn edge_through_dummy_is_straight_passthrough() {
 }
 
 // ---------------------------------------------------------------------------
-// Golden-file integration test: run the built binary over every
-// _site/examples/*.mm.md and diff its text output against the matching
-// *.expect.txt. Cases the renderer fully reproduces today are asserted equal;
-// the rest are still exercised end-to-end (binary must run and emit output)
-// so the harness already covers them and starts asserting as soon as they
-// match. As more renderers land, move their names into GOLDEN_TXT_PASSING.
+// Golden-file integration tests: run over EVERY _site/examples/*.mm.md and diff
+// the text/SVG output against its *.expect.txt / *.expect.svg. There is no
+// "WIP / loose" tier — any example whose output differs is a real failure and is
+// named in the panic message. A green run means every golden matches byte-for-byte.
 // ---------------------------------------------------------------------------
-
-// Example stems whose binary output currently matches their .expect.txt exactly.
-const GOLDEN_TXT_PASSING: &[&str] = &[
-    "simple",
-    "lr_simple",
-    "shapes",
-    "edges",
-    "diamond",
-    "flowchart",
-    "lr_fanout",
-    "multiline",
-];
 
 // Run the CLI binary on `input_path` and return its stdout as a String.
 fn run_binary(input_path: &str) -> String {
@@ -853,48 +839,37 @@ fn golden_txt_examples() {
         .collect();
     entries.sort();
 
+    // EVERY example with a .expect.txt golden is diffed exactly. No loose fallback —
+    // a case whose output differs MUST fail (and be named), not silently pass.
     let mut checked = 0;
+    let mut failures: Vec<String> = Vec::new();
     for path in entries {
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
         let stem = match name.strip_suffix(".mm.md") {
-            Some(s) => s,
+            Some(s) => s.to_string(),
             None => continue,
         };
-        let input = path.to_str().unwrap();
-        let got = run_binary(input);
-
         let expect_path = format!("{dir}/{stem}.expect.txt");
         if !Path::new(&expect_path).exists() {
             continue;
         }
-
-        if GOLDEN_TXT_PASSING.contains(&stem) {
-            let want = std::fs::read_to_string(&expect_path).expect("read expect.txt");
-            assert_eq!(got, want, "golden txt mismatch for {stem}");
-            checked += 1;
-        } else {
-            // Renderer for this example is still WIP: only require the binary to
-            // run and produce non-empty output (full golden diff comes later).
-            assert!(!got.is_empty(), "binary produced no output for {stem}");
+        let got = run_binary(path.to_str().unwrap());
+        let want = std::fs::read_to_string(&expect_path).expect("read expect.txt");
+        checked += 1;
+        if got != want {
+            failures.push(stem);
         }
     }
 
-    assert_eq!(
+    assert!(checked > 0, "no .expect.txt goldens found");
+    assert!(
+        failures.is_empty(),
+        "golden TXT mismatch ({}/{} differ): {:?}",
+        failures.len(),
         checked,
-        GOLDEN_TXT_PASSING.len(),
-        "expected every passing golden txt case to be checked"
+        failures
     );
 }
-
-// Example stems whose --svg output currently matches their .expect.svg exactly.
-const GOLDEN_SVG_PASSING: &[&str] = &[
-    "simple",
-    "lr_simple",
-    "shapes",
-    "diamond",
-    "flowchart",
-    "lr_fanout",
-];
 
 // Run the CLI binary with --svg on `input_path` and return its stdout as a String.
 fn run_binary_svg(input_path: &str) -> String {
@@ -923,49 +898,34 @@ fn golden_svg_examples() {
         .collect();
     entries.sort();
 
+    // EVERY example with a .expect.svg golden is diffed exactly.
     let mut checked = 0;
+    let mut failures: Vec<String> = Vec::new();
     for path in entries {
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
         let stem = match name.strip_suffix(".mm.md") {
-            Some(s) => s,
+            Some(s) => s.to_string(),
             None => continue,
         };
-        let input = path.to_str().unwrap();
-        let got = run_binary_svg(input);
-
         let expect_path = format!("{dir}/{stem}.expect.svg");
         if !Path::new(&expect_path).exists() {
             continue;
         }
-
-        if GOLDEN_SVG_PASSING.contains(&stem) {
-            let want = std::fs::read_to_string(&expect_path).expect("read expect.svg");
-            assert_eq!(got, want, "golden svg mismatch for {stem}");
-            checked += 1;
-        } else {
-            // SVG renderer for this example is still WIP: don't pin the exact bytes
-            // yet, but require structurally well-formed SVG (full golden diff comes
-            // later as each case's renderer is locked into GOLDEN_SVG_PASSING).
-            let trimmed = got.trim();
-            assert!(
-                trimmed.starts_with("<svg") || trimmed.starts_with("<?xml"),
-                "svg output for {stem} does not start with an <svg> root"
-            );
-            assert!(
-                trimmed.ends_with("</svg>"),
-                "svg output for {stem} is not closed with </svg>"
-            );
-            assert!(
-                got.contains("xmlns=\"http://www.w3.org/2000/svg\""),
-                "svg output for {stem} missing svg xmlns declaration"
-            );
+        let got = run_binary_svg(path.to_str().unwrap());
+        let want = std::fs::read_to_string(&expect_path).expect("read expect.svg");
+        checked += 1;
+        if got != want {
+            failures.push(stem);
         }
     }
 
-    assert_eq!(
+    assert!(checked > 0, "no .expect.svg goldens found");
+    assert!(
+        failures.is_empty(),
+        "golden SVG mismatch ({}/{} differ): {:?}",
+        failures.len(),
         checked,
-        GOLDEN_SVG_PASSING.len(),
-        "expected every passing golden svg case to be checked"
+        failures
     );
 }
 
@@ -1007,29 +967,29 @@ fn lib_golden_txt_examples() {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/_site/examples");
 
     let mut checked = 0;
+    let mut failures: Vec<String> = Vec::new();
     for (stem, input) in example_cases() {
         // Library default text rendering mirrors the no-flag CLI: Unicode, no
         // direction override (direction comes from the diagram header).
-        let got = mermaid_ascii::render_dsl(&input, false, None);
-
         let expect_path = format!("{dir}/{stem}.expect.txt");
         if !Path::new(&expect_path).exists() {
             continue;
         }
-
-        if GOLDEN_TXT_PASSING.contains(&stem.as_str()) {
-            let want = std::fs::read_to_string(&expect_path).expect("read expect.txt");
-            assert_eq!(got, want, "lib golden txt mismatch for {stem}");
-            checked += 1;
-        } else {
-            assert!(!got.is_empty(), "lib produced no text output for {stem}");
+        let got = mermaid_ascii::render_dsl(&input, false, None);
+        let want = std::fs::read_to_string(&expect_path).expect("read expect.txt");
+        checked += 1;
+        if got != want {
+            failures.push(stem);
         }
     }
 
-    assert_eq!(
+    assert!(checked > 0, "no .expect.txt goldens found");
+    assert!(
+        failures.is_empty(),
+        "lib golden TXT mismatch ({}/{} differ): {:?}",
+        failures.len(),
         checked,
-        GOLDEN_TXT_PASSING.len(),
-        "expected every passing lib golden txt case to be checked"
+        failures
     );
 }
 
@@ -1039,38 +999,26 @@ fn lib_golden_svg_examples() {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/_site/examples");
 
     let mut checked = 0;
+    let mut failures: Vec<String> = Vec::new();
     for (stem, input) in example_cases() {
-        let got = mermaid_ascii::render_dsl_svg(&input, None);
-
         let expect_path = format!("{dir}/{stem}.expect.svg");
         if !Path::new(&expect_path).exists() {
             continue;
         }
-
-        if GOLDEN_SVG_PASSING.contains(&stem.as_str()) {
-            let want = std::fs::read_to_string(&expect_path).expect("read expect.svg");
-            assert_eq!(got, want, "lib golden svg mismatch for {stem}");
-            checked += 1;
-        } else {
-            let trimmed = got.trim();
-            assert!(
-                trimmed.starts_with("<svg") || trimmed.starts_with("<?xml"),
-                "lib svg output for {stem} does not start with an <svg> root"
-            );
-            assert!(
-                trimmed.ends_with("</svg>"),
-                "lib svg output for {stem} is not closed with </svg>"
-            );
-            assert!(
-                got.contains("xmlns=\"http://www.w3.org/2000/svg\""),
-                "lib svg output for {stem} missing svg xmlns declaration"
-            );
+        let got = mermaid_ascii::render_dsl_svg(&input, None);
+        let want = std::fs::read_to_string(&expect_path).expect("read expect.svg");
+        checked += 1;
+        if got != want {
+            failures.push(stem);
         }
     }
 
-    assert_eq!(
+    assert!(checked > 0, "no .expect.svg goldens found");
+    assert!(
+        failures.is_empty(),
+        "lib golden SVG mismatch ({}/{} differ): {:?}",
+        failures.len(),
         checked,
-        GOLDEN_SVG_PASSING.len(),
-        "expected every passing lib golden svg case to be checked"
+        failures
     );
 }
