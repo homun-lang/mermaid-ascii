@@ -216,6 +216,120 @@ simplify := (pts: @[Point]) -> @[Point] {
 // bottom of `from` and enters the top of `to`; for LR it leaves the right and
 // enters the left (insert_dummies guarantees `from` precedes `to` in layer order,
 // so the geometric side is fixed). Returns a RoutedEdge per input edge.
+// Insert point `p` at index `idx` (idx in [0, len]).
+pt_insert := (lst: @[Point], idx: int, p: Point) -> @[Point] {
+  out ::= @[]
+  i ::= 0
+  while (i <= len(lst)) {
+    if (i == idx) { push(out, p) }
+    if (i < len(lst)) { push(out, lst[i]) }
+    i ::= i + 1
+  }
+  out
+}
+
+// ensure_vertical_endpoints (TD, ref-hom-rs): make the first and last segments short
+// vertical steps so arrowheads point straight down. A horizontal end segment gets a
+// one-row kink inserted.
+ensure_vertical_endpoints := (wps: @[Point]) -> @[Point] {
+  if (len(wps) < 2) { => wps }
+  out ::= @[]
+  i ::= 0
+  while (i < len(wps)) {
+    push(out, wps[i])
+    i ::= i + 1
+  }
+  // last segment
+  n := len(out)
+  n1 := n - 1
+  n2 := n - 2
+  lx := out[n1].x
+  ly := out[n1].y
+  px := out[n2].x
+  py := out[n2].y
+  if (ly == py and lx != px and py > 0) {
+    ny := py - 1
+    out[n2] := Point { x: px, y: ny }
+    out ::= pt_insert(out, n1, Point { x: lx, y: ny })
+  }
+  // first segment
+  if (len(out) >= 2 and out[0].y == out[1].y and out[0].x != out[1].x) {
+    x0 := out[0].x
+    y0 := out[0].y
+    sx := out[1].x
+    ny := y0 + 1
+    out[1] := Point { x: sx, y: ny }
+    out ::= pt_insert(out, 1, Point { x: x0, y: ny })
+  }
+  out
+}
+
+// LR analogue: make first/last segments short HORIZONTAL steps (arrowheads point right).
+ensure_horizontal_endpoints := (wps: @[Point]) -> @[Point] {
+  if (len(wps) < 2) { => wps }
+  out ::= @[]
+  i ::= 0
+  while (i < len(wps)) {
+    push(out, wps[i])
+    i ::= i + 1
+  }
+  n := len(out)
+  n1 := n - 1
+  n2 := n - 2
+  lx := out[n1].x
+  ly := out[n1].y
+  px := out[n2].x
+  py := out[n2].y
+  if (lx == px and ly != py and px > 0) {
+    nx := px - 1
+    out[n2] := Point { x: nx, y: py }
+    out ::= pt_insert(out, n1, Point { x: nx, y: ly })
+  }
+  if (len(out) >= 2 and out[0].x == out[1].x and out[0].y != out[1].y) {
+    x0 := out[0].x
+    y0 := out[0].y
+    sy := out[1].y
+    nx := x0 + 1
+    out[1] := Point { x: nx, y: sy }
+    out ::= pt_insert(out, 1, Point { x: nx, y: y0 })
+  }
+  out
+}
+
+sgn := (a: int) -> int {
+  if (a > 0) { => 1 }
+  if (a < 0) { => 0 - 1 }
+  0
+}
+
+// True if any cell along the orthogonal polyline `wpts` lands on a blocked grid cell.
+path_blocked := (blocked: @{int: int}, wpts: @[Point], w: int) -> bool {
+  i ::= 0
+  while (i < len(wpts) - 1) {
+    ax := wpts[i].x
+    ay := wpts[i].y
+    bx := wpts[i + 1].x
+    by := wpts[i + 1].y
+    dx := sgn(bx - ax)
+    dy := sgn(by - ay)
+    cx ::= ax
+    cy ::= ay
+    cont ::= true
+    while (cont) {
+      key := cy * w + cx
+      if (key in blocked) { => true }
+      if (cx == bx and cy == by) {
+        cont ::= false
+      } else {
+        cx ::= cx + dx
+        cy ::= cy + dy
+      }
+    }
+    i ::= i + 1
+  }
+  false
+}
+
 route_edges := (nodes: @[LayoutNode], edges: @[LayoutEdge], dir: Direction) -> @[RoutedEdge] {
   maxx ::= 1
   maxy ::= 1
@@ -268,27 +382,50 @@ route_edges := (nodes: @[LayoutNode], edges: @[LayoutEdge], dir: Direction) -> @
         tgy ::= eny
       }
 
-      // Structured "mid-bend" route: leave the source border, run straight to the
-      // MIDDLE of the inter-layer gap, turn once, run to the target column/row, then
-      // straight into the target. Edges sharing a source exit therefore overlap on a
-      // common centred bar; the renderer merges those overlaps into ┬/┴ junctions.
-      // (homunc drops grouping parens, so the midpoint is bound in two steps.)
-      push(wpts, Point { x: ex, y: ey })
-      // Midpoint rounds up (ceil) so odd gaps bias the bar toward the target side.
+      // Mid-bend L-path: clean centred fork (ceil so odd gaps bias toward target).
+      mb ::= @[]
+      push(mb, Point { x: ex, y: ey })
       if (dir == Direction.LR) {
         bend ::= ex + enx + 1
         bend ::= bend / 2
-        push(wpts, Point { x: bend, y: ey })
-        push(wpts, Point { x: bend, y: eny })
+        push(mb, Point { x: bend, y: ey })
+        push(mb, Point { x: bend, y: eny })
       } else {
         bend ::= ey + eny + 1
         bend ::= bend / 2
-        push(wpts, Point { x: ex, y: bend })
-        push(wpts, Point { x: enx, y: bend })
+        push(mb, Point { x: ex, y: bend })
+        push(mb, Point { x: enx, y: bend })
       }
-      push(wpts, Point { x: enx, y: eny })
+      push(mb, Point { x: enx, y: eny })
+
+      // If the mid-bend would cross a node box, route around it with A* instead.
+      blocked := build_blocked(nodes, fi, ti, w)
+      if (path_blocked(blocked, mb, w)) {
+        mid := astar(blocked, sx, sy, tgx, tgy, gmaxx, gmaxy, w)
+        push(wpts, Point { x: ex, y: ey })
+        if (len(mid) > 0) {
+          m ::= 0
+          while (m < len(mid)) {
+            push(wpts, mid[m])
+            m ::= m + 1
+          }
+        }
+        push(wpts, Point { x: enx, y: eny })
+      } else {
+        k ::= 0
+        while (k < len(mb)) {
+          push(wpts, mb[k])
+          k ::= k + 1
+        }
+      }
     }
-    routed := simplify(wpts)
+    simp := simplify(wpts)
+    routed ::= simp
+    if (dir == Direction.LR) {
+      routed ::= ensure_horizontal_endpoints(simp)
+    } else {
+      routed ::= ensure_vertical_endpoints(simp)
+    }
     push(out, RoutedEdge {
       from_id: edges[e].from_id,
       to_id: edges[e].to_id,
