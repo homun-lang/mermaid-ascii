@@ -587,7 +587,7 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
   cross_gap ::= 4
   if (dir == Direction.LR) {
     primary_gap ::= 4
-    cross_gap ::= 2
+    cross_gap ::= 3
   }
 
   // ── Primary axis: per-layer max thickness → cumulative positions ──────────

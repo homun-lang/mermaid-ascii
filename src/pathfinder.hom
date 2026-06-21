@@ -274,13 +274,14 @@ route_edges := (nodes: @[LayoutNode], edges: @[LayoutEdge], dir: Direction) -> @
       // common centred bar; the renderer merges those overlaps into ┬/┴ junctions.
       // (homunc drops grouping parens, so the midpoint is bound in two steps.)
       push(wpts, Point { x: ex, y: ey })
+      // Midpoint rounds up (ceil) so odd gaps bias the bar toward the target side.
       if (dir == Direction.LR) {
-        bend ::= ex + enx
+        bend ::= ex + enx + 1
         bend ::= bend / 2
         push(wpts, Point { x: bend, y: ey })
         push(wpts, Point { x: bend, y: eny })
       } else {
-        bend ::= ey + eny
+        bend ::= ey + eny + 1
         bend ::= bend / 2
         push(wpts, Point { x: ex, y: bend })
         push(wpts, Point { x: enx, y: bend })
