@@ -132,9 +132,10 @@ svg_edge_is_bidir := (et: EdgeType) -> bool {
 
 // Dash/thick stroke attribute (empty for a plain solid edge). Dotted overrides
 // thick when both could apply (matches the EdgeType variants, which are exclusive).
+// Extra style attributes besides stroke-width (which svg_edge sets once, so thick
+// edges don't emit a second stroke-width — invalid XML).
 svg_edge_style := (et: EdgeType) -> str {
   if (svg_edge_is_dotted(et)) { => str("stroke-dasharray=\"6 4\"") }
-  if (svg_edge_is_thick(et)) { => str("stroke-width=\"3\"") }
   str("")
 }
 
@@ -183,9 +184,11 @@ svg_edge_label := (e: RoutedEdge) -> str {
 // following line when the edge is labeled.
 svg_edge := (e: RoutedEdge) -> str {
   pts := svg_edge_points(e.waypoints)
+  sw ::= str("1.5")
+  if (svg_edge_is_thick(e.edge_type)) { sw ::= str("3") }
   style := svg_edge_style(e.edge_type)
   markers := svg_edge_markers(e.edge_type, e.reversed)
-  poly := "<polyline points=\"${pts}\" fill=\"none\" stroke=\"black\" stroke-width=\"1.5\" ${style}${markers}/>"
+  poly := "<polyline points=\"${pts}\" fill=\"none\" stroke=\"black\" stroke-width=\"${sw}\" ${style}${markers}/>"
   if (len(e.label) > 0) {
     => "${poly}\n${svg_edge_label(e)}"
   }
