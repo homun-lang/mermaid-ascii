@@ -268,8 +268,26 @@ fn render_svg_doc(graph: &Graph) -> String {
     lines.join("\n")
 }
 
+// Parse a direction override from the playground ("" = use the graph's own header).
+#[cfg(feature = "wasm")]
+fn dir_from_str(s: &str) -> Option<Direction> {
+    match s {
+        "TD" | "td" | "TB" | "tb" => Some(Direction::TD),
+        "LR" | "lr" => Some(Direction::LR),
+        _ => None,
+    }
+}
+
+// WASM bindings consumed by _site/index.html (renderWithOptions / renderSvg).
+// `padding` is accepted for forward-compat but not yet wired into the layout.
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
-pub fn render_wasm(text: &str, ascii: bool) -> String {
-    render_dsl(text, ascii, None)
+pub fn render_with_options(text: &str, unicode: bool, _padding: i32, direction: &str) -> String {
+    render_dsl(text, !unicode, dir_from_str(direction))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn render_svg(text: &str, _padding: i32, direction: &str) -> String {
+    render_dsl_svg(text, dir_from_str(direction))
 }
