@@ -280,14 +280,16 @@ fn dir_from_str(s: &str) -> Option<Direction> {
 
 // WASM bindings consumed by _site/index.html (renderWithOptions / renderSvg).
 // `padding` is accepted for forward-compat but not yet wired into the layout.
+// js_name forces the camelCase export the playground imports — wasm-bindgen keeps
+// free-function names snake_case by default.
 #[cfg(feature = "wasm")]
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = renderWithOptions)]
 pub fn render_with_options(text: &str, unicode: bool, _padding: i32, direction: &str) -> String {
     render_dsl(text, !unicode, dir_from_str(direction))
 }
 
 #[cfg(feature = "wasm")]
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = renderSvg)]
 pub fn render_svg(text: &str, _padding: i32, direction: &str) -> String {
     render_dsl_svg(text, dir_from_str(direction))
 }
