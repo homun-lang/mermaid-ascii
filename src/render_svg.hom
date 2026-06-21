@@ -25,7 +25,24 @@ svg_ph := (h: int) -> int { h * 20 }
 
 // Centered label element. cx/cy are pixel coordinates of the box centre.
 svg_text := (cx: int, cy: int, label: str) -> str {
-  "<text x=\"${cx}\" y=\"${cy}\" dominant-baseline=\"central\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"14\">${label}</text>"
+  parts := split(label, "\n")
+  nlines := len(parts)
+  if (nlines <= 1) {
+    => "<text x=\"${cx}\" y=\"${cy}\" dominant-baseline=\"central\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"14\">${label}</text>"
+  }
+  // Multi-line: one <tspan> per line. total_h = lines*(FONT+2); top line at
+  // cy - total_h/2 + FONT/2, each line FONT+2 = 16px below the previous. (ref-hom-rs)
+  total_h := nlines * 16
+  start_y := cy - total_h / 2 + 7
+  tspans ::= str("")
+  i ::= 0
+  while (i < nlines) {
+    ty := start_y + i * 16
+    line := parts[i]
+    tspans ::= "${tspans}<tspan x=\"${cx}\" y=\"${ty}\">${line}</tspan>"
+    i ::= i + 1
+  }
+  "<text text-anchor=\"middle\" font-family=\"monospace\" font-size=\"14\">${tspans}</text>"
 }
 
 // Rect frame with corner radius rx (0 = sharp rectangle, 15 = rounded).
