@@ -171,12 +171,25 @@ svg_edge_points := (waypoints: @[Point]) -> str {
   pts
 }
 
-// Edge label <text>, centered just above the path's middle waypoint.
+// Edge label <text>. The label anchor is chosen IDENTICALLY to the ASCII renderer
+// (render_ascii.hom paint_edge) so both surfaces place the label the same way from
+// the same IR: a forked/bent edge (>= 4 waypoints) anchors at the target-side bend
+// `waypoints[wl-2]`, one cell up; a straight edge anchors beside its middle waypoint.
+// Anchoring at the bend (not the geometric midpoint) keeps the text off a long
+// straight run — e.g. the "writes" edge no longer overlays its own vertical line.
 svg_edge_label := (e: RoutedEdge) -> str {
-  mid_i := len(e.waypoints) / 2
-  mid := e.waypoints[mid_i]
-  lx := svg_px(mid.x)
-  ly := svg_py(mid.y) - 8
+  wl := len(e.waypoints)
+  lx ::= 0
+  ly ::= 0
+  if (wl >= 4) {
+    tb := e.waypoints[wl - 2]
+    lx ::= svg_px(tb.x)
+    ly ::= svg_py(tb.y) - 20
+  } else {
+    mid := e.waypoints[wl / 2]
+    lx ::= svg_px(mid.x)
+    ly ::= svg_py(mid.y) - 8
+  }
   "<text x=\"${lx}\" y=\"${ly}\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"12\" fill=\"#333\">${e.label}</text>"
 }
 

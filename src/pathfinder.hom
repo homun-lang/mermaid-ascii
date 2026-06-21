@@ -330,6 +330,80 @@ path_blocked := (blocked: @{int: int}, wpts: @[Point], w: int) -> bool {
   false
 }
 
+// A dummy bend-node id (prefix "__d"), produced by insert_dummies. Routing splits a
+// multi-layer edge into per-layer segments through these bend points.
+is_dummy_seg := (id: str) -> bool {
+  len(id) >= 3 and substr(id, 0, 3) == "__d"
+}
+
+// Re-join the per-segment RoutedEdges of a multi-layer edge (real → dummy → … → real)
+// into ONE RoutedEdge, so it renders as a single polyline with a single arrowhead at
+// the real target. Without this, every dummy segment is painted as its own arrow.
+// Segments that begin at a dummy are consumed by their chain; direct real→real edges
+// pass through unchanged. The dummy junction point is shared between consecutive
+// segments, so the next segment's first waypoint is dropped when appended.
+stitch_dummies := (segs: @[RoutedEdge]) -> @[RoutedEdge] {
+  out ::= @[]
+  e ::= 0
+  while (e < len(segs)) {
+    if (is_dummy_seg(segs[e].from_id)) {
+      e ::= e + 1
+      continue
+    }
+    if (not is_dummy_seg(segs[e].to_id)) {
+      push(out, segs[e])
+    } else {
+      merged ::= @[]
+      k ::= 0
+      while (k < len(segs[e].waypoints)) {
+        push(merged, segs[e].waypoints[k])
+        k ::= k + 1
+      }
+      cur ::= segs[e].to_id
+      end_to ::= cur
+      end_type ::= segs[e].edge_type
+      end_label ::= segs[e].label
+      end_rev ::= segs[e].reversed
+      guard ::= 0
+      going ::= true
+      while (going and guard < len(segs)) {
+        guard ::= guard + 1
+        nj ::= 0 - 1
+        j ::= 0
+        while (j < len(segs)) {
+          if (segs[j].from_id == cur) { nj ::= j }
+          j ::= j + 1
+        }
+        if (nj < 0) {
+          going ::= false
+        } else {
+          k ::= 1
+          while (k < len(segs[nj].waypoints)) {
+            push(merged, segs[nj].waypoints[k])
+            k ::= k + 1
+          }
+          end_to ::= segs[nj].to_id
+          end_type ::= segs[nj].edge_type
+          end_label ::= segs[nj].label
+          end_rev ::= segs[nj].reversed
+          cur ::= segs[nj].to_id
+          if (not is_dummy_seg(cur)) { going ::= false }
+        }
+      }
+      push(out, RoutedEdge {
+        from_id: segs[e].from_id,
+        to_id: end_to,
+        edge_type: end_type,
+        label: end_label,
+        reversed: end_rev,
+        waypoints: simplify(merged),
+      })
+    }
+    e ::= e + 1
+  }
+  out
+}
+
 route_edges := (nodes: @[LayoutNode], edges: @[LayoutEdge], dir: Direction) -> @[RoutedEdge] {
   maxx ::= 1
   maxy ::= 1
@@ -436,5 +510,5 @@ route_edges := (nodes: @[LayoutNode], edges: @[LayoutEdge], dir: Direction) -> @
     })
     e ::= e + 1
   }
-  out
+  stitch_dummies(out)
 }

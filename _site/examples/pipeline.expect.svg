@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="670" height="140" viewBox="0 0 670 140">
+<svg xmlns="http://www.w3.org/2000/svg" width="670" height="180" viewBox="0 0 670 180">
 <defs>
   <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
     <polygon points="0 0, 10 3.5, 0 7" fill="black"/>
@@ -7,9 +7,9 @@
     <polygon points="10 0, 0 3.5, 10 7" fill="black"/>
   </marker>
 </defs>
-<rect width="670" height="140" fill="white"/>
+<rect width="670" height="180" fill="white"/>
 <polyline points="120,40 150,40" fill="none" stroke="black" stroke-width="1.5"  marker-end="url(#arrowhead)"/>
-<polyline points="250,40 280,40 280,80 390,80 390,40 400,40" fill="none" stroke="black" stroke-width="1.5"  marker-end="url(#arrowhead)"/>
+<polyline points="250,40 270,40 270,100 400,100 400,40" fill="none" stroke="black" stroke-width="1.5"  marker-end="url(#arrowhead)"/>
 <polyline points="490,40 520,40" fill="none" stroke="black" stroke-width="1.5"  marker-end="url(#arrowhead)"/>
 <polyline points="250,40 280,40" fill="none" stroke="black" stroke-width="1.5"  marker-end="url(#arrowhead)"/>
 <polyline points="370,40 400,40" fill="none" stroke="black" stroke-width="1.5"  marker-end="url(#arrowhead)"/>

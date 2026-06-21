@@ -717,14 +717,139 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
     l ::= l + 1
   }
 
-  // Centre each layer.
+  // Centre each layer against the widest layer. Reference rounding:
+  //   center_col = maxw / 2 ; offset = center_col - layer_w/2  (TWO integer
+  // divisions, clamped to >= 0) — differs from (maxw - layer_w)/2 by one cell on
+  // odd widths, which is what the goldens expect.
+  center_col := maxw / 2
   i ::= 0
   while (i < n) {
     lay := ordered[i].layer
-    diff := maxw - layer_w[lay]
-    shift := diff / 2
-    cross[i] := cross[i] + shift
+    offset ::= center_col - layer_w[lay] / 2
+    if (offset < 0) { offset ::= 0 }
+    cross[i] := cross[i] + offset
     i ::= i + 1
+  }
+
+  // ── Barycenter refinement (Sugiyama phase 5, ported from ref-hom-rs) ──────
+  // Nudge each layer toward the mean centre of its REAL (non-dummy) neighbours
+  // in the adjacent layer: the forward pass aligns children under parents, the
+  // backward pass aligns parents over children. A whole layer shifts by one
+  // rounded delta, bounded to (-cross_gap, cross_gap) so refinement never
+  // reorders boxes or jumps a full slot. Dummy neighbours are skipped (a long
+  // edge passing through must not pull a node off its spine). Cross size =
+  // width for TD, height for LR.
+
+  // Forward: layers 1..maxlayer pulled toward parents in the previous layer.
+  l ::= 1
+  while (l <= maxlayer) {
+    sum_child ::= 0
+    sum_parent ::= 0
+    cnt ::= 0
+    i ::= 0
+    while (i < n) {
+      if (ordered[i].layer == l) {
+        csz ::= node_ws[i]
+        if (dir == Direction.LR) { csz ::= node_hs[i] }
+        child_center := cross[i] + csz / 2
+        e ::= 0
+        while (e < len(edges)) {
+          if (edges[e].to_id == ordered[i].id and not is_dummy_id(edges[e].from_id)) {
+            pidx := ord_index_of(ordered, edges[e].from_id)
+            if (pidx >= 0 and ordered[pidx].layer + 1 == l) {
+              pcsz ::= node_ws[pidx]
+              if (dir == Direction.LR) { pcsz ::= node_hs[pidx] }
+              parent_center := cross[pidx] + pcsz / 2
+              sum_child ::= sum_child + child_center
+              sum_parent ::= sum_parent + parent_center
+              cnt ::= cnt + 1
+            }
+          }
+          e ::= e + 1
+        }
+      }
+      i ::= i + 1
+    }
+    if (cnt > 0) {
+      shift ::= sum_parent / cnt - sum_child / cnt
+      if (shift > 0 - cross_gap and shift < cross_gap) {
+        i ::= 0
+        while (i < n) {
+          if (ordered[i].layer == l) {
+            nv ::= cross[i] + shift
+            if (nv < 0) { nv ::= 0 }
+            cross[i] := nv
+          }
+          i ::= i + 1
+        }
+      }
+    }
+    l ::= l + 1
+  }
+
+  // Backward: layers maxlayer-1..0 pulled toward children in the next layer.
+  l ::= maxlayer - 1
+  while (l >= 0) {
+    sum_node ::= 0
+    sum_child ::= 0
+    cnt ::= 0
+    i ::= 0
+    while (i < n) {
+      if (ordered[i].layer == l) {
+        csz ::= node_ws[i]
+        if (dir == Direction.LR) { csz ::= node_hs[i] }
+        node_center := cross[i] + csz / 2
+        e ::= 0
+        while (e < len(edges)) {
+          if (edges[e].from_id == ordered[i].id and not is_dummy_id(edges[e].to_id)) {
+            cidx := ord_index_of(ordered, edges[e].to_id)
+            if (cidx >= 0 and ordered[cidx].layer == l + 1) {
+              ccsz ::= node_ws[cidx]
+              if (dir == Direction.LR) { ccsz ::= node_hs[cidx] }
+              child_center := cross[cidx] + ccsz / 2
+              sum_node ::= sum_node + node_center
+              sum_child ::= sum_child + child_center
+              cnt ::= cnt + 1
+            }
+          }
+          e ::= e + 1
+        }
+      }
+      i ::= i + 1
+    }
+    if (cnt > 0) {
+      shift ::= sum_child / cnt - sum_node / cnt
+      if (shift > 0 - cross_gap and shift < cross_gap) {
+        i ::= 0
+        while (i < n) {
+          if (ordered[i].layer == l) {
+            nv ::= cross[i] + shift
+            if (nv < 0) { nv ::= 0 }
+            cross[i] := nv
+          }
+          i ::= i + 1
+        }
+      }
+    }
+    l ::= l - 1
+  }
+
+  // Normalise so the minimum cross coordinate is 0 (reference final step).
+  minc ::= 0
+  if (n > 0) {
+    minc ::= cross[0]
+    i ::= 1
+    while (i < n) {
+      if (cross[i] < minc) { minc ::= cross[i] }
+      i ::= i + 1
+    }
+  }
+  if (minc > 0) {
+    i ::= 0
+    while (i < n) {
+      cross[i] := cross[i] - minc
+      i ::= i + 1
+    }
   }
 
   // ── Emit LayoutNodes in LAYER-MAJOR order (layer 0 in order, then layer 1, …) ─

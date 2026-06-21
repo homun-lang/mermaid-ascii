@@ -18,6 +18,7 @@ pub mod graph;
     clippy::redundant_field_names,
     clippy::single_match,
     clippy::too_many_arguments,
+    clippy::unnecessary_cast,
     clippy::unnecessary_mut_passed,
     clippy::unnecessary_to_owned,
     clippy::unused_unit,
@@ -211,28 +212,40 @@ fn render(graph: &Graph, ascii: bool) -> String {
 // cell short at each end (the gap the ASCII paint_edge leaves for stubs/arrowheads), so
 // the arrowhead marker sits in the gap rather than under the box border.
 fn trim_edge(mut e: RoutedEdge) -> RoutedEdge {
+    // Target end: land exactly one cell before the box border. The ASCII renderer
+    // always paints the arrowhead one cell shy of the border, so two edges entering
+    // the same node share that cell and the arm-merge yields a single head. The SVG
+    // must end on that same cell or its marker-end sits on the border, one cell off
+    // from a sibling edge — the phantom double arrow. When the final segment is a
+    // single cell, stepping in would land on the neighbour, so drop the border
+    // waypoint instead (the neighbour already IS the one-before-border cell).
     let n = e.waypoints.len();
     if n >= 2 {
-        let first = step_in(&e.waypoints[0], &e.waypoints[1]);
-        let last = step_in(&e.waypoints[n - 1], &e.waypoints[n - 2]);
-        e.waypoints[0] = first;
-        e.waypoints[n - 1] = last;
+        let stepped = step_one(&e.waypoints[n - 1], &e.waypoints[n - 2]);
+        if stepped == e.waypoints[n - 2] {
+            e.waypoints.pop();
+        } else {
+            e.waypoints[n - 1] = stepped;
+        }
+    }
+    // Source end: same, one cell out from the source border.
+    let n = e.waypoints.len();
+    if n >= 2 {
+        let stepped = step_one(&e.waypoints[0], &e.waypoints[1]);
+        if stepped == e.waypoints[1] {
+            e.waypoints.remove(0);
+        } else {
+            e.waypoints[0] = stepped;
+        }
     }
     e
 }
 
-// One cell step from `p` toward `toward` (orthogonal segments only move one axis). Left
-// unchanged when the segment is a single cell, so endpoints never cross their neighbor.
-fn step_in(p: &Point, toward: &Point) -> Point {
-    let dx = toward.x - p.x;
-    let dy = toward.y - p.y;
-    if dx.abs() + dy.abs() >= 2 {
-        Point {
-            x: p.x + dx.signum(),
-            y: p.y + dy.signum(),
-        }
-    } else {
-        Point { x: p.x, y: p.y }
+// One orthogonal cell from `p` toward `toward`.
+fn step_one(p: &Point, toward: &Point) -> Point {
+    Point {
+        x: p.x + (toward.x - p.x).signum(),
+        y: p.y + (toward.y - p.y).signum(),
     }
 }
 

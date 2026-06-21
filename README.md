@@ -377,7 +377,32 @@ Subgraph {
 }
 ```
 
-#### Layout IR (Layout → Renderer)
+#### Layout IR (Layout → Renderer) — the single source of truth
+
+**Design principle: the layout IR is rendered 1:1 to both ASCII/Unicode and SVG.**
+The IR (`LayoutNode[]` + `RoutedEdge[]`) already fixes *where every box, shape, and
+edge segment lives* in one shared char-grid coordinate space. A renderer is a pure,
+mechanical translation of that geometry into its target surface — it must **not** make
+independent layout decisions. The ASCII and SVG outputs of the same diagram must agree
+cell-for-cell: same node positions, same edge waypoints, same number of arrowheads,
+labels on the same side of the same segment.
+
+Concretely, this means:
+
+- **One edge → one arrowhead.** A multi-layer edge is split into per-layer dummy
+  segments for layout, but those segments are stitched back into a single `RoutedEdge`
+  (one polyline, one head) before rendering — never one arrowhead per segment.
+- **Arrowhead placement is shared.** Both renderers put the head exactly one cell
+  before the target border. Two edges entering a node therefore end on the *same* cell:
+  ASCII arm-merges them into one head; SVG markers coincide into one. (If they diverge,
+  you get the "phantom double arrow" — a renderer making its own decision.)
+- **Label placement is shared.** Both renderers anchor an edge label at the same
+  waypoint (the target-side bend for a forked edge, else beside the midpoint) and offset
+  it off the line — so a label never overlays its own edge in either surface.
+
+If ASCII and SVG ever disagree, the bug is a renderer overstepping the IR, not the IR
+itself. Fix it by making both renderers read the same IR geometry, or by enriching the
+IR — not by hand-tuning one surface.
 
 ```
 LayoutResult {

@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.22 — 2026-06-21 — SVG renders the IR 1:1 with ASCII
+
+The layout IR is the single source of truth; a renderer is a mechanical 1:1 translation of
+it. Fixed two places where the SVG renderer made its own geometry decisions and diverged
+from the ASCII output for the same diagram.
+
+- **Phantom double arrow killed.** `trim_edge` (`lib.rs`) only pulled an edge endpoint back
+  from the target border when the final segment was ≥2 cells, so a stitched multi-layer edge
+  (1-cell final segment) kept its arrowhead ON the border while a sibling edge sat one cell
+  before — two SVG arrowheads where ASCII arm-merges to one. Now it always lands one cell
+  before the border and DROPS the border waypoint on a single-cell final segment, so every
+  edge into a node ends on the same cell (markers coincide → one head).
+- **Edge label no longer overlays its own line.** `svg_edge_label` (`render_svg.hom`) now
+  mirrors the ASCII renderer's anchor: the target-side bend (`waypoints[wl-2]`, one cell up)
+  for a forked edge, else beside the midpoint — so the `writes`/`HTTP` labels sit off the
+  line, same side as the text output.
+- **README:** new "Layout IR — the single source of truth" section documenting the 1:1
+  render principle (one edge → one arrowhead; shared arrowhead + label placement; if ASCII
+  and SVG disagree, a renderer is overstepping the IR).
+- Allow `clippy::unnecessary_cast` on the generated-code module (homunc emits `1 as usize`
+  for literal indices). SVG goldens regenerated.
+
+## v0.21 — 2026-06-21 — Sugiyama coordinate barycenter + dummy-edge stitch
+
+Ported the reference (`hom-rs`) coordinate algorithm and fixed multi-layer edge rendering.
+
+- **Coordinate assignment (`layout.hom` `assign_coords`):** replaced the centre-only pass
+  with the reference Phase-5 algorithm — two-division layer centering, then forward
+  (children→parents) and backward (parents→children) **barycenter refinement** clamped to
+  ±gap, then min-normalise. Generalised to the cross axis for TD and LR. Single-node layers
+  now stay on the spine instead of drifting to the middle of a wider neighbour (fixes
+  `pipeline` spine, `architecture` node alignment, straightens `flowchart`'s `Start→Decision`).
+- **Edge routing (`pathfinder.hom` `route_edges`):** added `stitch_dummies` — a multi-layer
+  edge is split into per-layer segments through dummy bend points for layout, then re-joined
+  into ONE `RoutedEdge` (one polyline, one arrowhead) before rendering. Previously each dummy
+  segment was painted as its own arrow (e.g. `architecture` Worker→Postgres showed two).
+- Goldens regenerated from engine output; only `flowchart`/`pipeline`/`architecture` shifted,
+  the other 8 examples are byte-identical.
+
 ## v0.20 — 2026-06-21 — Ground-up `.hom` rewrite, narrow-waist architecture
 
 Full reimplementation following the `markdown-to-html` Homun-compiler template. Core
