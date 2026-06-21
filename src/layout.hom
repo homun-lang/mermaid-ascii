@@ -348,6 +348,22 @@ sweep_layer := (ids: @[str], lays: @[int], ords: @[int], edges: @[LayoutEdge], l
     i ::= i + 1
   }
 
+  // Order members by their CURRENT within-layer order (not appearance), so that the
+  // stable barycenter sort below preserves the seed/previous order on ties.
+  a ::= 0
+  while (a < len(members)) {
+    b ::= a + 1
+    while (b < len(members)) {
+      if (ords[members[b]] < ords[members[a]]) {
+        t := members[a]
+        members[a] := members[b]
+        members[b] := t
+      }
+      b ::= b + 1
+    }
+    a ::= a + 1
+  }
+
   bary ::= @[]
   m ::= 0
   while (m < len(members)) {
@@ -429,14 +445,15 @@ order_layers := (nodes: @[NodeLayer], edges: @[LayoutEdge]) -> @[OrderedNode] {
     i ::= i + 1
   }
 
-  // Initial order within a layer = count of earlier nodes sharing that layer.
+  // Initial within-layer order = ALPHABETICAL rank of the id (ref-hom-rs seeds each
+  // layer with a sort before the barycenter sweeps, so ties stay alphabetical).
   ords ::= @[]
   i ::= 0
   while (i < n) {
     c ::= 0
     j ::= 0
-    while (j < i) {
-      if (lays[j] == lays[i]) { c ::= c + 1 }
+    while (j < n) {
+      if (j != i and lays[j] == lays[i] and ids[j] < ids[i]) { c ::= c + 1 }
       j ::= j + 1
     }
     push(ords, c)
