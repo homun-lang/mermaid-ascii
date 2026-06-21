@@ -292,7 +292,13 @@ paint_edge := (c::Canvas, cs: CharSet, e: RoutedEdge) -> _ {
             painted ::= true
           }
           if (not painted) {
-            cset(c, cx, cy, line_glyph(cs, e.edge_type, pdx, pdy, ndx, ndy))
+            // The first line cell out of a real source box is drawn solid; the
+            // dotted/thick styling begins one cell further along.
+            if (i == 1 and src_border) {
+              cset(c, cx, cy, line_glyph(cs, EdgeType.Line, pdx, pdy, ndx, ndy))
+            } else {
+              cset(c, cx, cy, line_glyph(cs, e.edge_type, pdx, pdy, ndx, ndy))
+            }
           }
         }
       }
