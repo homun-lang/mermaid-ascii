@@ -268,19 +268,22 @@ route_edges := (nodes: @[LayoutNode], edges: @[LayoutEdge], dir: Direction) -> @
         tgy ::= eny
       }
 
-      blocked := build_blocked(nodes, fi, ti, w)
-      mid := astar(blocked, sx, sy, tgx, tgy, gmaxx, gmaxy, w)
-
+      // Structured "mid-bend" route: leave the source border, run straight to the
+      // MIDDLE of the inter-layer gap, turn once, run to the target column/row, then
+      // straight into the target. Edges sharing a source exit therefore overlap on a
+      // common centred bar; the renderer merges those overlaps into ┬/┴ junctions.
+      // (homunc drops grouping parens, so the midpoint is bound in two steps.)
       push(wpts, Point { x: ex, y: ey })
-      if (len(mid) > 0) {
-        m ::= 0
-        while (m < len(mid)) {
-          push(wpts, mid[m])
-          m ::= m + 1
-        }
+      if (dir == Direction.LR) {
+        bend ::= ex + enx
+        bend ::= bend / 2
+        push(wpts, Point { x: bend, y: ey })
+        push(wpts, Point { x: bend, y: eny })
       } else {
-        push(wpts, Point { x: sx, y: sy })
-        push(wpts, Point { x: tgx, y: tgy })
+        bend ::= ey + eny
+        bend ::= bend / 2
+        push(wpts, Point { x: ex, y: bend })
+        push(wpts, Point { x: enx, y: bend })
       }
       push(wpts, Point { x: enx, y: eny })
     }

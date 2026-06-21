@@ -180,6 +180,77 @@ line_glyph := (cs: CharSet, et: EdgeType, pdx: int, pdy: int, ndx: int, ndy: int
   edge_vchar(cs, et)
 }
 
+// ── Arm-merging for edge junctions ─────────────────────────────────────────
+// Each line cell carries a 4-bit arm mask: N=1, E=2, S=4, W=8. Where two edges
+// cross the same cell we OR their arms and pick the box glyph for the union, so a
+// fan-out's ┘ and └ combine into ┴ instead of overwriting each other.
+
+// Arm bit for a unit step direction (toward a neighbour cell).
+arm_of := (dx: int, dy: int) -> int {
+  if (dy < 0) { => 1 }
+  if (dy > 0) { => 4 }
+  if (dx > 0) { => 2 }
+  if (dx < 0) { => 8 }
+  0
+}
+
+// (v / bit) mod 2 — the bit of `v` at position `bit` (1,2,4,8). No `%`/`|` in homun
+// arithmetic (| is the pipe operator), so bit ops are done by hand.
+bit_at := (v: int, bit: int) -> int {
+  q := v / bit
+  q - q / 2 * 2
+}
+
+// Bitwise OR of two 0..15 arm masks.
+bor := (a: int, b: int) -> int {
+  r ::= 0
+  if (bit_at(a, 1) == 1 or bit_at(b, 1) == 1) { r ::= r + 1 }
+  if (bit_at(a, 2) == 1 or bit_at(b, 2) == 1) { r ::= r + 2 }
+  if (bit_at(a, 4) == 1 or bit_at(b, 4) == 1) { r ::= r + 4 }
+  if (bit_at(a, 8) == 1 or bit_at(b, 8) == 1) { r ::= r + 8 }
+  r
+}
+
+// Arm mask of an already-painted glyph (0 if it is not an edge line/junction).
+arms_of_glyph := (cs: CharSet, ch: str) -> int {
+  if (ch == cs.bx.tl) { => 6 }
+  if (ch == cs.bx.tr) { => 12 }
+  if (ch == cs.bx.bl) { => 3 }
+  if (ch == cs.bx.br) { => 9 }
+  if (ch == cs.bx.t_up) { => 11 }
+  if (ch == cs.bx.t_down) { => 14 }
+  if (ch == cs.bx.t_left) { => 13 }
+  if (ch == cs.bx.t_right) { => 7 }
+  if (ch == cs.bx.cross) { => 15 }
+  if (ch == cs.bx.v or ch == "╎" or ch == "║" or ch == ":") { => 5 }
+  if (ch == cs.bx.h or ch == "╌" or ch == "═" or ch == ".") { => 10 }
+  0
+}
+
+// Box glyph for an arm mask. Straight runs respect the edge's line style; junctions
+// are always solid.
+glyph_from_arms := (cs: CharSet, et: EdgeType, mask: int) -> str {
+  if (mask == 5) { => edge_vchar(cs, et) }
+  if (mask == 10) { => edge_hchar(cs, et) }
+  if (mask == 6) { => cs.bx.tl }
+  if (mask == 12) { => cs.bx.tr }
+  if (mask == 3) { => cs.bx.bl }
+  if (mask == 9) { => cs.bx.br }
+  if (mask == 7) { => cs.bx.t_right }
+  if (mask == 11) { => cs.bx.t_up }
+  if (mask == 13) { => cs.bx.t_left }
+  if (mask == 14) { => cs.bx.t_down }
+  if (mask == 15) { => cs.bx.cross }
+  cs.bx.v
+}
+
+// Write an edge line cell, merging with whatever line glyph is already there.
+paint_line_cell := (c::Canvas, cs: CharSet, x: int, y: int, et: EdgeType, mask: int) -> _ {
+  cur := canvas_get(c, x, y)
+  m := bor(mask, arms_of_glyph(cs, cur))
+  cset(c, x, y, glyph_from_arms(cs, et, m))
+}
+
 // Arrowhead glyph pointing in direction (dx,dy).
 arrow_glyph := (cs: CharSet, dx: int, dy: int) -> str {
   if (dy > 0) { => cs.arrow_down }
@@ -271,7 +342,8 @@ paint_edge := (c::Canvas, cs: CharSet, e: RoutedEdge) -> _ {
         if (src_border) {
           cset(c, cx, cy, stub_glyph(cs, odx, ody))
         } else {
-          cset(c, cx, cy, line_glyph(cs, e.edge_type, 0 - odx, 0 - ody, odx, ody))
+          amask := bor(arm_of(0 - odx, 0 - ody), arm_of(odx, ody))
+          paint_line_cell(c, cs, cx, cy, e.edge_type, amask)
         }
       } else {
         if (i == last) {
@@ -279,7 +351,8 @@ paint_edge := (c::Canvas, cs: CharSet, e: RoutedEdge) -> _ {
           if (not tgt_border) {
             idx := sign_i(cx - cells[i - 1].x)
             idy := sign_i(cy - cells[i - 1].y)
-            cset(c, cx, cy, line_glyph(cs, e.edge_type, 0 - idx, 0 - idy, idx, idy))
+            amask := bor(arm_of(0 - idx, 0 - idy), arm_of(idx, idy))
+            paint_line_cell(c, cs, cx, cy, e.edge_type, amask)
           }
         } else {
           pdx := sign_i(cells[i - 1].x - cx)
@@ -298,12 +371,13 @@ paint_edge := (c::Canvas, cs: CharSet, e: RoutedEdge) -> _ {
             painted ::= true
           }
           if (not painted) {
+            amask := bor(arm_of(pdx, pdy), arm_of(ndx, ndy))
             // The first line cell out of a real source box is drawn solid; the
             // dotted/thick styling begins one cell further along.
             if (i == 1 and src_border) {
-              cset(c, cx, cy, line_glyph(cs, EdgeType.Line, pdx, pdy, ndx, ndy))
+              paint_line_cell(c, cs, cx, cy, EdgeType.Line, amask)
             } else {
-              cset(c, cx, cy, line_glyph(cs, e.edge_type, pdx, pdy, ndx, ndy))
+              paint_line_cell(c, cs, cx, cy, e.edge_type, amask)
             }
           }
         }
