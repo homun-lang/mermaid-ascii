@@ -12,6 +12,7 @@ src/config.rs
 src/layout_types.rs
 src/parser.rs
 src/layout.rs
+src/subgraph.rs
 src/pathfinder.rs
 src/charset.rs
 src/canvas.rs

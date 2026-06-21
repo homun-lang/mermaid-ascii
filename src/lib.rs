@@ -28,6 +28,7 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/lexer.rs"));
     include!(concat!(env!("OUT_DIR"), "/parser.rs"));
     include!(concat!(env!("OUT_DIR"), "/layout.rs"));
+    include!(concat!(env!("OUT_DIR"), "/subgraph.rs"));
     include!(concat!(env!("OUT_DIR"), "/pathfinder.rs"));
     include!(concat!(env!("OUT_DIR"), "/canvas.rs"));
     include!(concat!(env!("OUT_DIR"), "/render_ascii.rs"));
@@ -45,7 +46,10 @@ pub use generated::{
 pub use generated::{LayoutEdge, NodeLayer, assign_layers, remove_cycles};
 pub use generated::{Point, RoutedEdge, route_edges};
 pub use generated::{Token, TokenKind, tokenize};
-pub use generated::{svg_edge, svg_node};
+pub use generated::{
+    build_dim_overrides, collapse_subgraphs, expand_compound_nodes, paint_compound,
+};
+pub use generated::{svg_compound, svg_edge, svg_node};
 
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
@@ -94,21 +98,51 @@ fn label_of(graph: &Graph, id: &str) -> String {
 
 // Full ASCII/Unicode render: lay the graph out (Sugiyama → coords → routing) into the
 // shared graphIR, then paint nodes and edges onto a character canvas.
-fn render(graph: &Graph, ascii: bool) -> String {
+// Shared layout: graph → graphIR (LayoutNode[] + RoutedEdge[]). Subgraphs are collapsed
+// into compound nodes, laid out, then expanded into container + member boxes (ref-hom-rs).
+fn layout_pipeline(graph: &Graph) -> (Vec<LayoutNode>, Vec<RoutedEdge>) {
     let dir = graph.direction.clone();
+    if !graph.subgraphs.is_empty() {
+        let cr = collapse_subgraphs(graph.clone(), 1);
+        let overrides = build_dim_overrides(cr.compounds.clone(), 1);
+        let dag = remove_cycles(cr.collapsed.clone());
+        let layers = assign_layers(cr.collapsed.nodes.clone(), dag.clone());
+        let expanded = insert_dummies(layers, dag);
+        let ordered = order_layers(expanded.nodes, expanded.edges.clone());
+        let laid = assign_coords(
+            ordered,
+            cr.collapsed.nodes.clone(),
+            expanded.edges.clone(),
+            overrides,
+            dir.clone(),
+        );
+        let routed = route_edges(laid.clone(), expanded.edges, dir);
+        let nodes = expand_compound_nodes(laid, cr.compounds);
+        (nodes, routed)
+    } else {
+        let dag = remove_cycles(graph.clone());
+        let layers = assign_layers(graph.nodes.clone(), dag.clone());
+        let expanded = insert_dummies(layers, dag);
+        let ordered = order_layers(expanded.nodes, expanded.edges.clone());
+        let nodes = assign_coords(
+            ordered,
+            graph.nodes.clone(),
+            expanded.edges.clone(),
+            vec![],
+            dir.clone(),
+        );
+        let routed = route_edges(nodes.clone(), expanded.edges, dir);
+        (nodes, routed)
+    }
+}
 
-    // Layout pipeline → graphIR (LayoutNode[] + RoutedEdge[]).
-    let dag = remove_cycles(graph.clone());
-    let layers = assign_layers(graph.nodes.clone(), dag.clone());
-    let expanded = insert_dummies(layers, dag);
-    let ordered = order_layers(expanded.nodes, expanded.edges.clone());
-    let nodes = assign_coords(
-        ordered,
-        graph.nodes.clone(),
-        expanded.edges.clone(),
-        dir.clone(),
-    );
-    let routed = route_edges(nodes.clone(), expanded.edges, dir);
+// True if `id` is a compound (subgraph container) id.
+fn is_compound(id: &str) -> bool {
+    id.starts_with("__sg_")
+}
+
+fn render(graph: &Graph, ascii: bool) -> String {
+    let (nodes, routed) = layout_pipeline(graph);
 
     // Canvas size: bounding box of every box plus every routed waypoint.
     let mut w: i32 = 1;
@@ -139,10 +173,18 @@ fn render(graph: &Graph, ascii: bool) -> String {
     };
 
     let mut c = canvas_new(w, h);
+    // Containers first (behind), then nodes on top.
     for n in &nodes {
-        let shape = shape_of(graph, &n.id);
-        let label = label_of(graph, &n.id);
-        paint_node(&mut c, cs.clone(), n.clone(), shape, label);
+        if is_compound(&n.id) {
+            paint_compound(&mut c, cs.clone(), n.clone());
+        }
+    }
+    for n in &nodes {
+        if !is_compound(&n.id) {
+            let shape = shape_of(graph, &n.id);
+            let label = label_of(graph, &n.id);
+            paint_node(&mut c, cs.clone(), n.clone(), shape, label);
+        }
     }
     for e in routed {
         paint_edge(&mut c, cs.clone(), e);
@@ -199,20 +241,7 @@ fn step_in(p: &Point, toward: &Point) -> Point {
 // width/height pad the cell bounding box by one cell on every side before scaling.
 // Edges are drawn before nodes so node boxes paint on top.
 fn render_svg_doc(graph: &Graph) -> String {
-    let dir = graph.direction.clone();
-
-    // Layout pipeline → graphIR (LayoutNode[] + RoutedEdge[]).
-    let dag = remove_cycles(graph.clone());
-    let layers = assign_layers(graph.nodes.clone(), dag.clone());
-    let expanded = insert_dummies(layers, dag);
-    let ordered = order_layers(expanded.nodes, expanded.edges.clone());
-    let nodes = assign_coords(
-        ordered,
-        graph.nodes.clone(),
-        expanded.edges.clone(),
-        dir.clone(),
-    );
-    let routed = route_edges(nodes.clone(), expanded.edges, dir);
+    let (nodes, routed) = layout_pipeline(graph);
 
     // Cell bounding box of every box plus every routed waypoint (same as render()).
     let mut w: i32 = 1;
@@ -255,12 +284,20 @@ fn render_svg_doc(graph: &Graph) -> String {
     for e in routed {
         lines.push(svg_edge(trim_edge(e)));
     }
+    // Containers behind, member/regular nodes on top.
     for n in &nodes {
-        let shape = shape_of(graph, &n.id);
-        let label = label_of(graph, &n.id);
-        let s = svg_node(n.clone(), shape, label);
-        if !s.is_empty() {
-            lines.push(s);
+        if is_compound(&n.id) {
+            lines.push(svg_compound(n.clone(), n.id[5..].to_string()));
+        }
+    }
+    for n in &nodes {
+        if !is_compound(&n.id) {
+            let shape = shape_of(graph, &n.id);
+            let label = label_of(graph, &n.id);
+            let s = svg_node(n.clone(), shape, label);
+            if !s.is_empty() {
+                lines.push(s);
+            }
         }
     }
     lines.push("</svg>".to_string());

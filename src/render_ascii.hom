@@ -400,3 +400,25 @@ paint_edge := (c::Canvas, cs: CharSet, e: RoutedEdge) -> _ {
     }
   }
 }
+
+// Paint a compound (subgraph container): box border + centered title on row y+1.
+// Defined after paint_text so homunc sees its `::Canvas` (&mut) param. The title is
+// the subgraph name recovered from the "__sg_" id prefix.
+paint_compound := (c::Canvas, cs: CharSet, n: LayoutNode) -> _ {
+  paint_border(c, n.x, n.y, n.width, cs.bx.tl, cs.bx.h, cs.bx.tr)
+  bot := n.y + n.height - 1
+  paint_border(c, n.x, bot, n.width, cs.bx.bl, cs.bx.h, cs.bx.br)
+  r ::= 1
+  while (r < n.height - 1) {
+    cset(c, n.x, n.y + r, cs.bx.v)
+    cset(c, n.x + n.width - 1, n.y + r, cs.bx.v)
+    r ::= r + 1
+  }
+  nid := n.id
+  title := substr(nid, 5, len(nid))
+  inner := n.width - 2
+  slack := inner - len(title)
+  pad ::= slack / 2
+  if (pad < 0) { pad ::= 0 }
+  paint_text(c, n.x + 1 + pad, n.y + 1, title)
+}

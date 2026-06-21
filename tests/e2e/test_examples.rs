@@ -281,7 +281,7 @@ fn coords_for(src: &str) -> Vec<mermaid_ascii::LayoutNode> {
     let layers = assign_layers(graph.nodes.clone(), dag.clone());
     let expanded = insert_dummies(layers, dag);
     let ordered = order_layers(expanded.nodes, expanded.edges.clone());
-    assign_coords(ordered, graph.nodes.clone(), expanded.edges, dir)
+    assign_coords(ordered, graph.nodes.clone(), expanded.edges, vec![], dir)
 }
 
 #[test]
@@ -417,6 +417,7 @@ fn route_for(
         ordered,
         graph.nodes.clone(),
         expanded.edges.clone(),
+        vec![],
         dir.clone(),
     );
     let routed = route_edges(nodes.clone(), expanded.edges, dir);

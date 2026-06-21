@@ -174,3 +174,19 @@ svg_edge := (e: RoutedEdge) -> str {
   }
   poly
 }
+
+// SVG for a compound (subgraph container): dashed border + top-left title.
+// Ported from ref-hom-rs svg_renderer render_rect "Container": SG_STROKE + a
+// font-size-12 #666 title at (x+8, y+FONT_SIZE+2).
+svg_compound := (n: LayoutNode, label: str) -> str {
+  px := svg_px(n.x)
+  py := svg_py(n.y)
+  pw := svg_pw(n.width)
+  ph := svg_ph(n.height)
+  tx := px + 8
+  ty := py + 16
+  rect := "<rect x=\"${px}\" y=\"${py}\" width=\"${pw}\" height=\"${ph}\" fill=\"none\" stroke=\"#888\" stroke-width=\"1\" stroke-dasharray=\"4 2\"/>"
+  txt := "<text x=\"${tx}\" y=\"${ty}\" font-family=\"monospace\" font-size=\"12\" fill=\"#666\">${label}</text>"
+  parts := @[rect, txt]
+  join(parts, "\n")
+}

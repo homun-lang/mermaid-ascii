@@ -572,12 +572,33 @@ ord_index_of := (ordered: @[OrderedNode], id: str) -> int {
 //      neighbours — forward (children→parents) then backward (parents→children);
 //   4. normalise so the min cross coordinate is 0.
 // `edges` (with dummies) supply the parent/child adjacency for step 3.
-assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge], dir: Direction) -> @[LayoutNode] {
+assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge], overrides: @[(str, int, int)], dir: Direction) -> @[LayoutNode] {
   n := len(ordered)
   maxlayer ::= 0
   i ::= 0
   while (i < n) {
     if (ordered[i].layer > maxlayer) { maxlayer ::= ordered[i].layer }
+    i ::= i + 1
+  }
+
+  // Precompute each node's (w, h), honouring compound dimension overrides (id → w,h).
+  node_ws ::= @[]
+  node_hs ::= @[]
+  i ::= 0
+  while (i < n) {
+    bw ::= box_width(nodes, ordered[i])
+    bh ::= box_height(nodes, ordered[i])
+    oi ::= 0
+    while (oi < len(overrides)) {
+      key, ow, oh := overrides[oi]
+      if (key == ordered[i].id) {
+        bw ::= ow
+        bh ::= oh
+      }
+      oi ::= oi + 1
+    }
+    push(node_ws, bw)
+    push(node_hs, bh)
     i ::= i + 1
   }
 
@@ -599,10 +620,8 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
   }
   i ::= 0
   while (i < n) {
-    w := box_width(nodes, ordered[i])
-    h := box_height(nodes, ordered[i])
-    pri ::= h
-    if (dir == Direction.LR) { pri ::= w }
+    pri ::= node_hs[i]
+    if (dir == Direction.LR) { pri ::= node_ws[i] }
     lay := ordered[i].layer
     if (pri > layer_thick[lay]) { layer_thick[lay] := pri }
     i ::= i + 1
@@ -648,7 +667,9 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
       }
       if (idx >= 0) {
         cross[idx] := pos
-        pos ::= pos + cross_size(nodes, ordered[idx], dir) + cross_gap
+        csz ::= node_ws[idx]
+        if (dir == Direction.LR) { csz ::= node_hs[idx] }
+        pos ::= pos + csz + cross_gap
         placed ::= placed + 1
       }
       ord ::= ord + 1
@@ -666,7 +687,9 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
   i ::= 0
   while (i < n) {
     lay := ordered[i].layer
-    redge := cross[i] + cross_size(nodes, ordered[i], dir)
+    csz ::= node_ws[i]
+    if (dir == Direction.LR) { csz ::= node_hs[i] }
+    redge := cross[i] + csz
     if (redge > layer_w[lay]) { layer_w[lay] := redge }
     i ::= i + 1
   }
@@ -691,8 +714,8 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
   out ::= @[]
   i ::= 0
   while (i < n) {
-    w := box_width(nodes, ordered[i])
-    h := box_height(nodes, ordered[i])
+    w := node_ws[i]
+    h := node_hs[i]
     lay := ordered[i].layer
     px ::= cross[i]
     py ::= layer_pos[lay]

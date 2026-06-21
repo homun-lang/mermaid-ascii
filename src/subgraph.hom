@@ -1,0 +1,312 @@
+use std
+
+// Compound-subgraph layout — algorithm ported from the ref-hom-rs reference.
+//
+// A subgraph is laid out by COLLAPSING its members into one compound node, laying
+// the collapsed graph out normally, then EXPANDING: the compound becomes a container
+// box and its members are placed in a row inside it.
+//
+// Constants (ref): COMPOUND_PREFIX "__sg_", SG_INNER_GAP 1, SG_PAD_X 1.
+
+// A subgraph's name + the ids of its direct member nodes.
+@derive(Clone, Debug, PartialEq)
+SgMembers := struct { name: str, members: @[str] }
+
+// One collapsed subgraph: its compound id, member ids and per-member geometry.
+@derive(Clone, Debug, PartialEq)
+Compound := struct {
+  sg_name: str,
+  compound_id: str,
+  member_ids: @[str],
+  member_widths: @[int],
+  member_heights: @[int],
+  max_member_height: int,
+  member_labels: @[str],
+  member_shapes: @[NodeShape]
+}
+
+// Result of collapsing: the reduced graph + the compounds describing each subgraph.
+@derive(Clone, Debug, PartialEq)
+CollapseResult := struct { collapsed: Graph, compounds: @[Compound] }
+
+sg_prefix := () -> str { str("__sg_") }
+sg_inner_gap := () -> int { 1 }
+sg_pad_x := () -> int { 1 }
+
+// Direct member ids of every subgraph (by name). Nested subgraphs are not in scope.
+collect_subgraph_members := (graph: Graph) -> @[SgMembers] {
+  out ::= @[]
+  i ::= 0
+  while (i < len(graph.subgraphs)) {
+    nm := graph.subgraphs[i].id
+    ids ::= @[]
+    j ::= 0
+    while (j < len(graph.subgraphs[i].nodes)) {
+      push(ids, graph.subgraphs[i].nodes[j].id)
+      j ::= j + 1
+    }
+    push(out, SgMembers { name: nm, members: ids })
+    i ::= i + 1
+  }
+  out
+}
+
+// Look up a node's label by id (falls back to the id itself).
+node_label_of := (graph: Graph, id: str) -> str {
+  i ::= 0
+  while (i < len(graph.nodes)) {
+    if (graph.nodes[i].id == id) {
+      lbl := graph.nodes[i].label
+      if (len(lbl) > 0) { => lbl }
+      => graph.nodes[i].id
+    }
+    i ::= i + 1
+  }
+  id
+}
+
+node_shape_of := (graph: Graph, id: str) -> NodeShape {
+  i ::= 0
+  while (i < len(graph.nodes)) {
+    if (graph.nodes[i].id == id) { => graph.nodes[i].shape }
+    i ::= i + 1
+  }
+  NodeShape.Rectangle
+}
+
+// True if `id` is a direct member of any subgraph.
+is_member := (members: @[SgMembers], id: str) -> bool {
+  i ::= 0
+  while (i < len(members)) {
+    j ::= 0
+    while (j < len(members[i].members)) {
+      if (members[i].members[j] == id) { => true }
+      j ::= j + 1
+    }
+    i ::= i + 1
+  }
+  false
+}
+
+// Subgraph name that `id` belongs to, or "" if none.
+sg_of_member := (members: @[SgMembers], id: str) -> str {
+  i ::= 0
+  while (i < len(members)) {
+    j ::= 0
+    while (j < len(members[i].members)) {
+      if (members[i].members[j] == id) { => members[i].name }
+      j ::= j + 1
+    }
+    i ::= i + 1
+  }
+  str("")
+}
+
+// True if `id` is itself a subgraph name.
+is_sg_name := (members: @[SgMembers], id: str) -> bool {
+  i ::= 0
+  while (i < len(members)) {
+    if (members[i].name == id) { => true }
+    i ::= i + 1
+  }
+  false
+}
+
+// Resolve an edge endpoint to its compound id when it is a member or a subgraph name.
+resolve_endpoint := (members: @[SgMembers], id: str) -> str {
+  sg := sg_of_member(members, id)
+  if (len(sg) > 0) { => "${sg_prefix()}${sg}" }
+  if (is_sg_name(members, id)) { => "${sg_prefix()}${id}" }
+  id
+}
+
+// Build a (str, str) pair via a function so the call-site args are cloned (a tuple
+// literal at the push site would MOVE a/b, which are also needed for the edge below).
+make_pair := (x: str, y: str) -> (str, str) {
+  p := (x, y)
+  p
+}
+
+contains_pair := (lst: @[(str, str)], a: str, b: str) -> bool {
+  i ::= 0
+  while (i < len(lst)) {
+    p0, p1 := lst[i]
+    if (p0 == a and p1 == b) { => true }
+    i ::= i + 1
+  }
+  false
+}
+
+// Build one Compound per subgraph (member geometry from each member's label).
+build_compounds := (graph: Graph, members: @[SgMembers], padding: int) -> @[Compound] {
+  out ::= @[]
+  i ::= 0
+  while (i < len(members)) {
+    nm := members[i].name
+    cid := "${sg_prefix()}${nm}"
+    ids ::= @[]
+    ws ::= @[]
+    hs ::= @[]
+    labels ::= @[]
+    shapes ::= @[]
+    maxh ::= 3
+    j ::= 0
+    while (j < len(members[i].members)) {
+      mid := members[i].members[j]
+      lbl := node_label_of(graph, mid)
+      shp := node_shape_of(graph, mid)
+      lw := max_line_w(lbl)
+      lc := label_lines(lbl)
+      mw := lw + 2 + 2 * padding
+      mh := 2 + lc
+      push(ids, mid)
+      push(ws, mw)
+      push(hs, mh)
+      push(labels, lbl)
+      push(shapes, shp)
+      if (mh > maxh) { maxh ::= mh }
+      j ::= j + 1
+    }
+    push(out, Compound {
+      sg_name: nm,
+      compound_id: cid,
+      member_ids: ids,
+      member_widths: ws,
+      member_heights: hs,
+      max_member_height: maxh,
+      member_labels: labels,
+      member_shapes: shapes
+    })
+    i ::= i + 1
+  }
+  out
+}
+
+// Collapse subgraph members into compound nodes; remap & dedup edges.
+collapse_subgraphs := (graph: Graph, padding: int) -> CollapseResult {
+  members := collect_subgraph_members(graph)
+  compounds := build_compounds(graph, members, padding)
+
+  nodes ::= @[]
+  // Non-member, non-subgraph-name original nodes pass through.
+  i ::= 0
+  while (i < len(graph.nodes)) {
+    nid := graph.nodes[i].id
+    if (not is_member(members, nid) and not is_sg_name(members, nid)) {
+      push(nodes, Node { id: graph.nodes[i].id, label: graph.nodes[i].label, shape: graph.nodes[i].shape })
+    }
+    i ::= i + 1
+  }
+  // One node per compound (label = subgraph name).
+  i ::= 0
+  while (i < len(compounds)) {
+    push(nodes, Node { id: compounds[i].compound_id, label: compounds[i].sg_name, shape: NodeShape.Rectangle })
+    i ::= i + 1
+  }
+
+  // Remap edges to compound endpoints, dropping self-loops and duplicates.
+  edges ::= @[]
+  seen ::= @[]
+  i ::= 0
+  while (i < len(graph.edges)) {
+    a := resolve_endpoint(members, graph.edges[i].from_id)
+    b := resolve_endpoint(members, graph.edges[i].to_id)
+    if (a != b and not contains_pair(seen, a, b)) {
+      push(seen, make_pair(a, b))
+      push(edges, Edge { from_id: a, to_id: b, edge_type: graph.edges[i].edge_type, label: graph.edges[i].label })
+    }
+    i ::= i + 1
+  }
+
+  CollapseResult {
+    collapsed: Graph { nodes: nodes, edges: edges, subgraphs: @[], direction: graph.direction },
+    compounds: compounds
+  }
+}
+
+// Compound box dimensions: width fits members-or-title, height = border+title+members.
+compound_dim := (c: Compound, padding: int) -> (int, int) {
+  total ::= 0
+  i ::= 0
+  while (i < len(c.member_widths)) {
+    total ::= total + c.member_widths[i]
+    i ::= i + 1
+  }
+  nmem := len(c.member_ids)
+  if (nmem > 1) {
+    g := nmem - 1
+    total ::= total + g * sg_inner_gap()
+  }
+  title_w := len(c.sg_name) + 4
+  inner ::= total
+  if (title_w > inner) { inner ::= title_w }
+  width := 2 + 2 * sg_pad_x() + inner
+  // Bind max_member_height to a local + bind the tuple — homunc would otherwise glue
+  // `c.max_member_height` to the next-line `(width, height)` as a method call.
+  mmh := c.max_member_height
+  height := 3 + mmh
+  res := (width, height)
+  res
+}
+
+// Index of the compound whose id is `id`, or -1.
+compound_index := (compounds: @[Compound], id: str) -> int {
+  i ::= 0
+  while (i < len(compounds)) {
+    if (compounds[i].compound_id == id) { => i }
+    i ::= i + 1
+  }
+  -1
+}
+
+// Dimension override for a node id (compound boxes), as @[(id, w, h)].
+build_dim_overrides := (compounds: @[Compound], padding: int) -> @[(str, int, int)] {
+  out ::= @[]
+  i ::= 0
+  while (i < len(compounds)) {
+    cw, ch := compound_dim(compounds[i], padding)
+    push(out, (compounds[i].compound_id, cw, ch))
+    i ::= i + 1
+  }
+  out
+}
+
+// Expand each compound LayoutNode into the container box plus its member boxes,
+// placed in a row inside it (member_x = x+1+pad, member_y = y+2).
+expand_compound_nodes := (nodes: @[LayoutNode], compounds: @[Compound]) -> @[LayoutNode] {
+  out ::= @[]
+  i ::= 0
+  while (i < len(nodes)) {
+    nx := nodes[i].x
+    ny := nodes[i].y
+    nw := nodes[i].width
+    nh := nodes[i].height
+    nid := nodes[i].id
+    ndum := nodes[i].is_dummy
+    ci := compound_index(compounds, nid)
+    push(out, LayoutNode { id: nid, x: nx, y: ny, width: nw, height: nh, is_dummy: ndum })
+    if (ci >= 0) {
+      mx ::= nx + 1 + sg_pad_x()
+      my := ny + 2
+      j ::= 0
+      while (j < len(compounds[ci].member_ids)) {
+        push(out, LayoutNode { id: compounds[ci].member_ids[j], x: mx, y: my, width: compounds[ci].member_widths[j], height: compounds[ci].member_heights[j], is_dummy: false })
+        mx ::= mx + compounds[ci].member_widths[j] + sg_inner_gap()
+        j ::= j + 1
+      }
+    }
+    i ::= i + 1
+  }
+  out
+}
+
+// True if `id` is a compound container id (starts with the "__sg_" prefix).
+is_compound_id := (id: str) -> bool {
+  len(id) >= 5 and substr(id, 0, 5) == "__sg_"
+}
+
+// Strip the "__sg_" prefix to recover the subgraph name (for the container title).
+compound_title := (id: str) -> str {
+  if (is_compound_id(id)) { => substr(id, 5, len(id)) }
+  id
+}
