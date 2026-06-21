@@ -500,24 +500,43 @@ label_for := (nodes: @[Node], id: str) -> str {
   id
 }
 
-// Box width for an ordered node: dummies are 1 wide; real boxes are the label width
-// plus 2 borders + 2 inner-padding spaces.
-box_width := (nodes: @[Node], o: OrderedNode) -> int {
-  if (o.is_dummy) { => 1 }
-  len(label_for(nodes, o.id)) + 4
+// Width of the widest line in a (possibly multi-line, \n-separated) label.
+max_line_w := (s: str) -> int {
+  parts := split(s, "\n")
+  m ::= 0
+  i ::= 0
+  while (i < len(parts)) {
+    lw := len(parts[i])
+    if (lw > m) { m ::= lw }
+    i ::= i + 1
+  }
+  m
 }
 
-// Box height: dummies are 1 tall; real boxes are a 3-line frame (top, label, bottom).
-box_height := (o: OrderedNode) -> int {
+// Number of \n-separated lines in a label (at least 1).
+label_lines := (s: str) -> int {
+  parts := split(s, "\n")
+  len(parts)
+}
+
+// Box width for an ordered node: dummies are 1 wide; real boxes are the widest label
+// line plus 2 borders + 2 inner-padding spaces.
+box_width := (nodes: @[Node], o: OrderedNode) -> int {
   if (o.is_dummy) { => 1 }
-  3
+  max_line_w(label_for(nodes, o.id)) + 4
+}
+
+// Box height: dummies are 1 tall; real boxes frame N label lines: top + N + bottom.
+box_height := (nodes: @[Node], o: OrderedNode) -> int {
+  if (o.is_dummy) { => 1 }
+  2 + label_lines(label_for(nodes, o.id))
 }
 
 // Cross-axis size of a node (the axis nodes spread along *within* a layer):
 // width for TD, height for LR.
 cross_size := (nodes: @[Node], o: OrderedNode, dir: Direction) -> int {
   w := box_width(nodes, o)
-  h := box_height(o)
+  h := box_height(nodes, o)
   if (dir == Direction.LR) { => h }
   w
 }
@@ -581,7 +600,7 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
   i ::= 0
   while (i < n) {
     w := box_width(nodes, ordered[i])
-    h := box_height(ordered[i])
+    h := box_height(nodes, ordered[i])
     pri ::= h
     if (dir == Direction.LR) { pri ::= w }
     lay := ordered[i].layer
@@ -774,7 +793,7 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
   i ::= 0
   while (i < n) {
     w := box_width(nodes, ordered[i])
-    h := box_height(ordered[i])
+    h := box_height(nodes, ordered[i])
     lay := ordered[i].layer
     px ::= cross[i]
     py ::= layer_pos[lay]

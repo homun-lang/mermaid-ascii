@@ -64,7 +64,13 @@ paint_label := (c::Canvas, x: int, py: int, w: int, side: str, has_side: bool, l
 paint_box := (c::Canvas, x: int, y: int, w: int, h: int, tl: str, tr: str, bl: str, br: str, fill: str, side: str, has_side: bool, label: str) -> _ {
   bot := y + h - 1
   paint_border(c, x, y, w, tl, fill, tr)
-  paint_label(c, x, y + 1, w, side, has_side, label)
+  // Multi-line labels (\n-separated) paint one centered row per line.
+  parts := split(label, "\n")
+  li ::= 0
+  while (li < len(parts)) {
+    paint_label(c, x, y + 1 + li, w, side, has_side, parts[li])
+    li ::= li + 1
+  }
   paint_border(c, x, bot, w, bl, fill, br)
 }
 
