@@ -710,21 +710,42 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
     i ::= i + 1
   }
 
-  // ── Emit LayoutNodes (map cross/primary onto x/y per direction) ───────────
+  // ── Emit LayoutNodes in LAYER-MAJOR order (layer 0 in order, then layer 1, …) ─
+  // The renderers paint in this list order, and the goldens list nodes layer-by-layer
+  // (not declaration order), so emit must walk layers/orders, not the ordered index.
   out ::= @[]
-  i ::= 0
-  while (i < n) {
-    w := node_ws[i]
-    h := node_hs[i]
-    lay := ordered[i].layer
-    px ::= cross[i]
-    py ::= layer_pos[lay]
-    if (dir == Direction.LR) {
-      px ::= layer_pos[lay]
-      py ::= cross[i]
+  l ::= 0
+  while (l <= maxlayer) {
+    cnt ::= 0
+    i ::= 0
+    while (i < n) {
+      if (ordered[i].layer == l) { cnt ::= cnt + 1 }
+      i ::= i + 1
     }
-    push(out, LayoutNode { id: ordered[i].id, x: px, y: py, width: w, height: h, is_dummy: ordered[i].is_dummy })
-    i ::= i + 1
+    placed ::= 0
+    ord ::= 0
+    while (placed < cnt) {
+      idx ::= -1
+      i ::= 0
+      while (i < n) {
+        if (ordered[i].layer == l and ordered[i].order == ord) { idx ::= i }
+        i ::= i + 1
+      }
+      if (idx >= 0) {
+        w := node_ws[idx]
+        h := node_hs[idx]
+        px ::= cross[idx]
+        py ::= layer_pos[l]
+        if (dir == Direction.LR) {
+          px ::= layer_pos[l]
+          py ::= cross[idx]
+        }
+        push(out, LayoutNode { id: ordered[idx].id, x: px, y: py, width: w, height: h, is_dummy: ordered[idx].is_dummy })
+        placed ::= placed + 1
+      }
+      ord ::= ord + 1
+    }
+    l ::= l + 1
   }
   out
 }
