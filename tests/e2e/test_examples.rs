@@ -811,7 +811,15 @@ fn edge_through_dummy_is_straight_passthrough() {
 // ---------------------------------------------------------------------------
 
 // Example stems whose binary output currently matches their .expect.txt exactly.
-const GOLDEN_TXT_PASSING: &[&str] = &["simple", "lr_simple"];
+const GOLDEN_TXT_PASSING: &[&str] = &[
+    "simple",
+    "lr_simple",
+    "shapes",
+    "edges",
+    "diamond",
+    "lr_fanout",
+    "multiline",
+];
 
 // Run the CLI binary on `input_path` and return its stdout as a String.
 fn run_binary(input_path: &str) -> String {
@@ -873,7 +881,7 @@ fn golden_txt_examples() {
 }
 
 // Example stems whose --svg output currently matches their .expect.svg exactly.
-const GOLDEN_SVG_PASSING: &[&str] = &["simple", "lr_simple"];
+const GOLDEN_SVG_PASSING: &[&str] = &["simple", "lr_simple", "shapes", "diamond", "lr_fanout"];
 
 // Run the CLI binary with --svg on `input_path` and return its stdout as a String.
 fn run_binary_svg(input_path: &str) -> String {
