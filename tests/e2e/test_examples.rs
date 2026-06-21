@@ -822,6 +822,7 @@ const GOLDEN_TXT_PASSING: &[&str] = &[
     "shapes",
     "edges",
     "diamond",
+    "flowchart",
     "lr_fanout",
     "multiline",
 ];
@@ -886,7 +887,14 @@ fn golden_txt_examples() {
 }
 
 // Example stems whose --svg output currently matches their .expect.svg exactly.
-const GOLDEN_SVG_PASSING: &[&str] = &["simple", "lr_simple", "shapes", "diamond", "lr_fanout"];
+const GOLDEN_SVG_PASSING: &[&str] = &[
+    "simple",
+    "lr_simple",
+    "shapes",
+    "diamond",
+    "flowchart",
+    "lr_fanout",
+];
 
 // Run the CLI binary with --svg on `input_path` and return its stdout as a String.
 fn run_binary_svg(input_path: &str) -> String {

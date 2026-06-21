@@ -616,38 +616,10 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
     l ::= l + 1
   }
 
-  // ── Cross axis: per-layer total width, then centre each layer ─────────────
-  layer_cross ::= @[]
-  l ::= 0
-  while (l <= maxlayer) {
-    sum ::= 0
-    cnt ::= 0
-    i ::= 0
-    while (i < n) {
-      if (ordered[i].layer == l) {
-        sum ::= sum + cross_size(nodes, ordered[i], dir)
-        cnt ::= cnt + 1
-      }
-      i ::= i + 1
-    }
-    // NB: homunc drops parens in codegen, so `(cnt-1)*cross_gap` would emit as
-    // `cnt - 1*cross_gap`. Bind the difference first to keep the multiply intact.
-    if (cnt > 1) {
-      gapn := cnt - 1
-      sum ::= sum + gapn * cross_gap
-    }
-    push(layer_cross, sum)
-    l ::= l + 1
-  }
-  maxcross ::= 0
-  l ::= 0
-  while (l <= maxlayer) {
-    if (layer_cross[l] > maxcross) { maxcross ::= layer_cross[l] }
-    l ::= l + 1
-  }
-  center ::= maxcross / 2
-
-  // cross[i] = cross-axis start position of node i (parallel to `ordered`).
+  // ── Cross axis: place each layer left-to-right from 0, then centre it against
+  // the widest layer.  shift = (max_width − layer_width) / 2 — ONE division (the
+  // reference's exact rounding), and NO barycenter pass. homunc drops grouping
+  // parens, so the subtraction is bound before the divide.
   cross ::= @[]
   i ::= 0
   while (i < n) {
@@ -655,10 +627,9 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
     i ::= i + 1
   }
 
+  // Place nodes of each layer in order, starting at 0.
   l ::= 0
   while (l <= maxlayer) {
-    offset ::= center - layer_cross[l] / 2
-    if (offset < 0) { offset ::= 0 }
     cnt ::= 0
     i ::= 0
     while (i < n) {
@@ -667,7 +638,7 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
     }
     placed ::= 0
     ord ::= 0
-    pos ::= offset
+    pos ::= 0
     while (placed < cnt) {
       idx ::= -1
       i ::= 0
@@ -685,107 +656,35 @@ assign_coords := (ordered: @[OrderedNode], nodes: @[Node], edges: @[LayoutEdge],
     l ::= l + 1
   }
 
-  // ── Barycenter refinement: forward (children toward parents) ──────────────
-  l ::= 1
+  // Per-layer width = max right edge of its nodes.
+  layer_w ::= @[]
+  l ::= 0
   while (l <= maxlayer) {
-    sum_parent ::= 0
-    sum_child ::= 0
-    cnt ::= 0
-    i ::= 0
-    while (i < n) {
-      if (ordered[i].layer == l) {
-        child_center := cross[i] + cross_size(nodes, ordered[i], dir) / 2
-        ei ::= 0
-        while (ei < len(edges)) {
-          if (edges[ei].to_id == ordered[i].id) {
-            pid := edges[ei].from_id
-            pidx := ord_index_of(ordered, pid)
-            if (pidx >= 0 and ord_layer_of(ordered, pid) == l - 1) {
-              sum_parent ::= sum_parent + cross[pidx] + cross_size(nodes, ordered[pidx], dir) / 2
-              sum_child ::= sum_child + child_center
-              cnt ::= cnt + 1
-            }
-          }
-          ei ::= ei + 1
-        }
-      }
-      i ::= i + 1
-    }
-    if (cnt > 0) {
-      shift := sum_parent / cnt - sum_child / cnt
-      if (shift > 0 - cross_gap and shift < cross_gap) {
-        i ::= 0
-        while (i < n) {
-          if (ordered[i].layer == l) {
-            nx ::= cross[i] + shift
-            if (nx < 0) { nx ::= 0 }
-            cross[i] := nx
-          }
-          i ::= i + 1
-        }
-      }
-    }
+    push(layer_w, 0)
+    l ::= l + 1
+  }
+  i ::= 0
+  while (i < n) {
+    lay := ordered[i].layer
+    redge := cross[i] + cross_size(nodes, ordered[i], dir)
+    if (redge > layer_w[lay]) { layer_w[lay] := redge }
+    i ::= i + 1
+  }
+  maxw ::= 0
+  l ::= 0
+  while (l <= maxlayer) {
+    if (layer_w[l] > maxw) { maxw ::= layer_w[l] }
     l ::= l + 1
   }
 
-  // ── Barycenter refinement: backward (parents toward children) ─────────────
-  l ::= maxlayer - 1
-  while (l >= 0) {
-    sum_node ::= 0
-    sum_child ::= 0
-    cnt ::= 0
-    i ::= 0
-    while (i < n) {
-      if (ordered[i].layer == l) {
-        node_center := cross[i] + cross_size(nodes, ordered[i], dir) / 2
-        ei ::= 0
-        while (ei < len(edges)) {
-          if (edges[ei].from_id == ordered[i].id) {
-            cid := edges[ei].to_id
-            cidx := ord_index_of(ordered, cid)
-            if (cidx >= 0 and ord_layer_of(ordered, cid) == l + 1) {
-              sum_child ::= sum_child + cross[cidx] + cross_size(nodes, ordered[cidx], dir) / 2
-              sum_node ::= sum_node + node_center
-              cnt ::= cnt + 1
-            }
-          }
-          ei ::= ei + 1
-        }
-      }
-      i ::= i + 1
-    }
-    if (cnt > 0) {
-      shift := sum_child / cnt - sum_node / cnt
-      if (shift > 0 - cross_gap and shift < cross_gap) {
-        i ::= 0
-        while (i < n) {
-          if (ordered[i].layer == l) {
-            nx ::= cross[i] + shift
-            if (nx < 0) { nx ::= 0 }
-            cross[i] := nx
-          }
-          i ::= i + 1
-        }
-      }
-    }
-    l ::= l - 1
-  }
-
-  // ── Normalise so min cross = 0 ────────────────────────────────────────────
-  if (n > 0) {
-    minc ::= cross[0]
-    i ::= 1
-    while (i < n) {
-      if (cross[i] < minc) { minc ::= cross[i] }
-      i ::= i + 1
-    }
-    if (minc > 0) {
-      i ::= 0
-      while (i < n) {
-        cross[i] := cross[i] - minc
-        i ::= i + 1
-      }
-    }
+  // Centre each layer.
+  i ::= 0
+  while (i < n) {
+    lay := ordered[i].layer
+    diff := maxw - layer_w[lay]
+    shift := diff / 2
+    cross[i] := cross[i] + shift
+    i ::= i + 1
   }
 
   // ── Emit LayoutNodes (map cross/primary onto x/y per direction) ───────────
